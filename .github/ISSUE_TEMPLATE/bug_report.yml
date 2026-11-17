@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a problem to help improve the project
+title: "[BUG] <short description>"
+labels: [bug]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: Clear and concise description of the issue
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How to reproduce the bug step by step
+      placeholder: |
+        1. Open the app
+        2. Do something
+        3. Bug happens
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead
+      placeholder: It should work normally
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots / videos
+      description: |
+        Attach `latestlog.txt`, screenshots or videos if possible.
+        This helps a lot to understand the issue faster.
+    validations:
+      required: false
+
+  - type: textarea
+    id: platform
+    attributes:
+      label: Device & environment
+      description: Fill in your device info
+      value: |
+        - Device model:
+        - CPU architecture:
+        - Android version:
+        - App version:
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional information
+      description: Anything else useful
+    validations:
+      required: false
