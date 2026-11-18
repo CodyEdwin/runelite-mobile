@@ -653,37 +653,102 @@ public final class Tools {
         return new File(getRuneLiteDir(), "sideloaded-plugins");
     }
 
-    public static void syncRuneLiteSideloadedPlugins() throws IOException {
+    /** Bundled plugin jars (Cody's VPS plugins) inside the APK. */
+    public static final String RUNELITE_BUNDLED_PLUGINS_ASSET = "runelite/sideloaded-plugins";
+    /** Plugins that cannot work on Android (no OpenGL), never copied into RuneLite's folder. */
+    private static boolean isKnownBrokenRuneLitePlugin(String name) {
+        return name.toLowerCase(java.util.Locale.ROOT).startsWith("117hd");
+    }
+
+    /**
+     * Build RuneLite's ~/.runelite/sideloaded-plugins (only read in developer mode) from the plugins
+     * bundled in the APK plus the jars the user put in the visible sideloaded-plugins folder.
+     * When {@code enabled} is false the folder is emptied so RuneLite loads none of them; the
+     * visible folder is never touched.
+     */
+    public static void syncRuneLiteSideloadedPlugins(Context context, boolean enabled) throws IOException {
         File visible = getRuneLiteSideloadDir();
         File target = new File(getRuneLiteDir(), ".runelite/sideloaded-plugins");
         FileUtils.ensureDirectory(visible);
         FileUtils.ensureDirectory(target);
         File manifest = new File(target, ".mirrored");
+        File bundledMarker = new File(target, ".bundled-version");
+        if (!enabled) {
+            File[] old = target.listFiles((dir, name) -> name.endsWith(".jar"));
+            if (old != null) for (File f : old) f.delete();
+            manifest.delete();
+            bundledMarker.delete();
+            Log.i("RuneLitePlugins", "Sideloaded plugins disabled: cleared " + target);
+            return;
+        }
         java.util.Set<String> previous = new java.util.HashSet<>();
         if (manifest.isFile()) {
             try (InputStream input = new FileInputStream(manifest)) {
                 for (String line : read(input).split("\n")) if (!line.trim().isEmpty()) previous.add(line.trim());
             }
         }
-        StringBuilder mirrored = new StringBuilder();
+        java.util.Set<String> present = new java.util.LinkedHashSet<>();
+
+        // 1. Bundled jars: re-extract only when the APK changed (or a jar is missing).
+        String[] bundled = context.getAssets().list(RUNELITE_BUNDLED_PLUGINS_ASSET);
+        String apkVersion;
+        try {
+            android.content.pm.PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+            apkVersion = info.lastUpdateTime + ":" + info.versionCode;
+        } catch (Exception e) {
+            apkVersion = "unknown";
+        }
+        String installedVersion = null;
+        if (bundledMarker.isFile()) {
+            try (InputStream input = new FileInputStream(bundledMarker)) {
+                installedVersion = read(input).trim();
+            }
+        }
+        boolean refreshBundled = !apkVersion.equals(installedVersion);
+        if (bundled != null) {
+            for (String name : bundled) {
+                if (!name.endsWith(".jar") || isKnownBrokenRuneLitePlugin(name)) continue;
+                present.add(name);
+                File copy = new File(target, name);
+                if (refreshBundled || !copy.isFile()) {
+                    try (InputStream in = context.getAssets().open(RUNELITE_BUNDLED_PLUGINS_ASSET + "/" + name);
+                         FileOutputStream out = new FileOutputStream(copy)) {
+                        IOUtils.copy(in, out);
+                    }
+                }
+            }
+        }
+        try (FileOutputStream output = new FileOutputStream(bundledMarker)) {
+            output.write(apkVersion.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+
+        // 2. User jars from the visible folder (a same-named user jar wins over the bundled one).
         File[] jars = visible.listFiles((dir, name) -> name.endsWith(".jar"));
-        java.util.Set<String> present = new java.util.HashSet<>();
         if (jars != null) {
             for (File jar : jars) {
+                if (isKnownBrokenRuneLitePlugin(jar.getName())) {
+                    Log.i("RuneLitePlugins", "Skipping " + jar.getName() + " (needs OpenGL, not available on Android)");
+                    continue;
+                }
                 present.add(jar.getName());
                 File copy = new File(target, jar.getName());
                 if (!copy.isFile() || copy.length() != jar.length() || copy.lastModified() < jar.lastModified()) {
                     org.apache.commons.io.FileUtils.copyFile(jar, copy);
                 }
-                mirrored.append(jar.getName()).append('\n');
             }
         }
+        // 3. Drop jars we put there earlier that are gone now (and anything known broken).
         for (String name : previous) {
             if (!present.contains(name)) new File(target, name).delete();
         }
+        File[] existing = target.listFiles((dir, name) -> name.endsWith(".jar"));
+        if (existing != null) for (File f : existing) if (isKnownBrokenRuneLitePlugin(f.getName())) f.delete();
+        StringBuilder mirrored = new StringBuilder();
+        for (String name : present) mirrored.append(name).append('\n');
         try (FileOutputStream output = new FileOutputStream(manifest)) {
             output.write(mirrored.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
+        Log.i("RuneLitePlugins", "Sideloaded plugins: " + present.size() + " jars in " + target);
     }
 
     /** Android entry point + overrides, see runelite_android_shim/ in the repository root. */
@@ -769,12 +834,17 @@ public final class Tools {
      * (the same one used by jar installers) instead of the Minecraft GL surface.
      */
     public static void startRuneLite(final Activity activity) throws Throwable {
+        startRuneLite(activity, null);
+    }
+
+    public static void startRuneLite(final Activity activity, String runeLiteProfile) throws Throwable {
         ensureRuneLiteInstalled(activity);
         String runtimeName = getRuneLiteRuntimeName(activity);
 
         Intent intent = new Intent(activity, JavaGUILauncherActivity.class);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE, true);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNTIME, runtimeName);
+        if (runeLiteProfile != null) intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_PROFILE, runeLiteProfile);
         activity.startActivity(intent);
     }
 

@@ -27,6 +27,10 @@ public class LauncherPreferences {
     public static final String PREF_KEY_SKIP_NOTIFICATION_CHECK = "skipNotificationPermissionCheck";
     /** Opt-in RuneLite performance mode (Stretched Mode for the session: lower resolution, higher FPS). */
     public static final String PREF_KEY_RUNELITE_PERFORMANCE = "runelitePerformanceMode";
+    /** Load the bundled + user sideloaded RuneLite plugins (default on). */
+    public static final String PREF_KEY_RUNELITE_SIDELOADED = "runeliteLoadSideloadedPlugins";
+    /** Last RuneLite profile picked on the launcher screen. */
+    public static final String PREF_KEY_RUNELITE_PROFILE = "runeliteProfile";
 
     public static SharedPreferences DEFAULT_PREF;
 

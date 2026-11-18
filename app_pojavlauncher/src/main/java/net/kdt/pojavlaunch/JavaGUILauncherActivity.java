@@ -63,6 +63,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     public static final String EXTRA_RUNELITE = "runeLite";
     /** Name of the Java runtime that should be used (optional, avoids re-picking it). */
     public static final String EXTRA_RUNTIME = "runtimeName";
+    /** RuneLite profile name (from ~/.runelite/profiles2) to start with, or null for the active one. */
+    public static final String EXTRA_RUNELITE_PROFILE = "runeLiteProfile";
 
     private static WeakReference<JavaGUILauncherActivity> sRunningInstance = new WeakReference<>(null);
 
@@ -363,8 +365,15 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     args.add("net.runelite.client.RuneLite");
                 }
                 args.add("--developer-mode");
+                String profile = getIntent().getStringExtra(EXTRA_RUNELITE_PROFILE);
+                if (profile != null && !profile.isEmpty()) {
+                    args.add("--profile");
+                    args.add(profile);
+                }
                 try {
-                    Tools.syncRuneLiteSideloadedPlugins();
+                    Tools.syncRuneLiteSideloadedPlugins(this,
+                            androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+                                    net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
                 } catch (Exception e) {
                     Log.w("JavaGUILauncher", "Unable to sync sideloaded plugins", e);
                 }

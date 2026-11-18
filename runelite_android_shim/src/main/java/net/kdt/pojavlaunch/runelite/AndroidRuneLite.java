@@ -35,6 +35,7 @@ public final class AndroidRuneLite {
         InputFocus.install();
         javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
 
+        args = JagexSessionMemory.addSavedCharacter(args);
         Method main = Class.forName("net.runelite.client.RuneLite").getMethod("main", String[].class);
         try {
             main.invoke(null, (Object) args);

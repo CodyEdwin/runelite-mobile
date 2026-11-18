@@ -245,6 +245,7 @@ public class JagexAuthService {
    }
 
    public void switchJagexAccount(String sessionId, String sub, String displayName) {
+      net.kdt.pojavlaunch.runelite.JagexSessionMemory.remember(sessionId == null ? null : (displayName == null ? "" : displayName));
       this.clientThread.invoke(() -> this.client.switchJagexAccount(sessionId, sub, displayName));
    }
 
