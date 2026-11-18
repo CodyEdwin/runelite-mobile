@@ -66,7 +66,7 @@ public class TestStorageActivity extends Activity {
         AsyncAssetManager.unpackComponents(this);
         AsyncAssetManager.unpackSingleFiles(this);
 
-        Intent intent =  new Intent(this, LauncherActivity.class);
+        Intent intent =  new Intent(this, net.kdt.pojavlaunch.runelitemobile.RuneLiteMobileActivity.class);
         if (getIntent() != null) {
             if (getIntent().getAction() != null) {
                 intent.setAction(getIntent().getAction());

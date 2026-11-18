@@ -55,6 +55,16 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".runelitemobile.RuneLiteMobileActivity"
+            android:label="@string/app_short_name"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.AppCompat.NoActionBar"/>
+        <activity
+            android:name=".runelitemobile.RuneLiteMobileSettingsActivity"
+            android:label="Settings"
+            android:theme="@style/Theme.AppCompat"/>
+        <activity
             android:name=".LauncherActivity"
             android:label="@string/app_short_name"
             android:launchMode="singleTask"

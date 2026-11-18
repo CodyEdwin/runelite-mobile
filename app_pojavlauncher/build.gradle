@@ -115,7 +115,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "org.xdaetherium.xdaetherium"
+        applicationId "com.codyedwin.runelitemobile"
         minSdkVersion 21
         targetSdkVersion 34
         versionCode 30000000
@@ -140,11 +140,11 @@ android {
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.customDebug
-            resValue "string", "app_name", "XDAetherium (Debug)"
-            resValue "string", "app_short_name", "XDAetherium (Debug)"
-            resValue 'string', 'application_package', 'org.xdaetherium.xdaetherium.debug'
-            resValue 'string', 'storageProviderAuthorities', 'org.xdaetherium.xdaetherium.scoped.gamefolder.debug'
-            resValue 'string', 'shareProviderAuthority', 'org.xdaetherium.xdaetherium.scoped.controlfolder.debug'
+            resValue "string", "app_name", "RuneLite Mobile (Debug)"
+            resValue "string", "app_short_name", "RuneLite Mobile (Debug)"
+            resValue 'string', 'application_package', 'com.codyedwin.runelitemobile.debug'
+            resValue 'string', 'storageProviderAuthorities', 'com.codyedwin.runelitemobile.debug.gamefolder'
+            resValue 'string', 'shareProviderAuthority', 'com.codyedwin.runelitemobile.debug.share'
         }
         proguard {
             initWith release
@@ -166,10 +166,10 @@ android {
             // defaultConfig already set
             // multiDexEnabled = true
             // debuggable = true
-            resValue "string", "app_name", "XDAetherium"
-            resValue "string", "app_short_name", "XDAetherium"
-            resValue 'string', 'storageProviderAuthorities', 'org.xdaetherium.xdaetherium.scoped.gamefolder'
-            resValue 'string', 'application_package', 'org.xdaetherium.xdaetherium'
+            resValue "string", "app_name", "RuneLite Mobile"
+            resValue "string", "app_short_name", "RuneLite Mobile"
+            resValue 'string', 'storageProviderAuthorities', 'com.codyedwin.runelitemobile.gamefolder'
+            resValue 'string', 'application_package', 'com.codyedwin.runelitemobile'
         }
         gplay {
             initWith release

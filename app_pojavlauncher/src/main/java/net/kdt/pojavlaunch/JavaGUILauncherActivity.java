@@ -357,6 +357,9 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     return;
                 }
 
+                // Memory setting from the launcher (separate process: read it from disk).
+                LauncherPreferences.PREF_RAM_ALLOCATION = androidx.preference.PreferenceManager
+                        .getDefaultSharedPreferences(this).getInt("allocation", LauncherPreferences.PREF_RAM_ALLOCATION);
                 List<String> args = new ArrayList<>();
                 // RuneLite only enables developer mode for development runs with assertions.
                 args.add("-ea");
