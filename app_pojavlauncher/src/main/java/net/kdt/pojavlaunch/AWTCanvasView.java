@@ -153,12 +153,52 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         });
         sForceFrame = true;
         mIsDestroyed = false;
-        new Thread(this, "AndroidAWTRenderer").start();
+        // One renderer per SurfaceTexture: an older thread (still sleeping when the surface was
+        // recreated) sees it is no longer current and exits instead of racing the new one.
+        Thread t = new Thread(this, "AndroidAWTRenderer");
+        mRenderThread = t;
+        t.start();
+    }
+
+    private volatile Thread mRenderThread;
+
+    private boolean isCurrentRenderer() {
+        return !mIsDestroyed && Thread.currentThread() == mRenderThread;
+    }
+
+    /**
+     * Returning from another app: Android destroyed the TextureView's hardware layer when the
+     * window was hidden but kept its SurfaceTexture, and on the next draw rebuilds the layer and
+     * silently calls setDefaultBufferSize(viewWidth, viewHeight) - no listener callback. Our
+     * canvas-sized frames then filled only the top-left part of a view-sized buffer (the game
+     * shrank into a corner). Re-apply our size and post a full frame whenever we become visible.
+     */
+    private void reapplyBufferSize() {
+        SurfaceTexture st = getSurfaceTexture();
+        if (st != null) st.setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
+        updateFitTransform(getWidth(), getHeight());
+        sForceFrame = true;
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            post(this::reapplyBufferSize);
+            postDelayed(this::reapplyBufferSize, 300);
+        }
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (isVisible) post(this::reapplyBufferSize);
     }
 
     @Override
     public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
         mIsDestroyed = true;
+        mRenderThread = null;
         return true;
     }
 
@@ -197,7 +237,9 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         boolean force = true;
         net.kdt.pojavlaunch.utils.ThreadPlacement.placeRenderThread();
         try {
-            while (!mIsDestroyed && surface.isValid()) {
+            final Rect dst = new Rect();
+            final Paint scalePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+            while (isCurrentRenderer() && surface.isValid()) {
                 polls++;
                 if (sForceFrame) { sForceFrame = false; force = true; }
                 int r = JREUtils.renderAWTScreenFrameToBitmap(bitmap, force);
@@ -224,7 +266,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                     force = false;
                     Canvas canvas = hardware ? surface.lockHardwareCanvas() : surface.lockCanvas(null);
                     try {
-                        canvas.drawBitmap(bitmap, 0, 0, null);
+                        drawFrame(canvas, bitmap, dst, scalePaint);
                     } finally {
                         surface.unlockCanvasAndPost(canvas);
                     }
@@ -247,6 +289,32 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         surface.release();
     }
 
+    /**
+     * Draw a canvas-sized frame so it always fills the whole buffer. If the buffer is not
+     * canvas-sized (TextureView reset it to the view size behind our back), scale the frame into it
+     * - the view transform stretches any buffer to the same fitted rectangle - and ask for the
+     * right size again for the following frames.
+     */
+    private static long sLastScaleLog;
+
+    private void drawFrame(Canvas canvas, Bitmap frame, Rect dst, Paint scalePaint) {
+        int cw = canvas.getWidth(), ch = canvas.getHeight();
+        if (cw == frame.getWidth() && ch == frame.getHeight()) {
+            canvas.drawBitmap(frame, 0, 0, null);
+            return;
+        }
+        dst.set(0, 0, cw, ch);
+        canvas.drawBitmap(frame, null, dst, scalePaint);
+        SurfaceTexture st = getSurfaceTexture();
+        if (st != null) st.setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
+        sForceFrame = true;
+        long now = System.currentTimeMillis();
+        if (now - sLastScaleLog > 2000) {
+            sLastScaleLog = now;
+            Log.i("AWTCanvasView", "buffer was " + cw + "x" + ch + ", frame " + frame.getWidth() + "x" + frame.getHeight() + ": scaled and re-sized");
+        }
+    }
+
     @Override
     public void run() {
         if (sFastBlit) {
@@ -262,7 +330,9 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         boolean hasFrame = false;
         boolean loggedInvalidFrame = false;
         try {
-            while (!mIsDestroyed && surface.isValid()) {
+            final Rect dst = new Rect();
+            final Paint scalePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+            while (isCurrentRenderer() && surface.isValid()) {
                 canvas = surface.lockCanvas(null);
                 try {
                     int[] rgbArray = JREUtils.renderAWTScreenFrame();
@@ -288,7 +358,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                         loggedInvalidFrame = true;
                     }
                     // Keep displaying the last complete frame while the JVM has no new frame.
-                    if (hasFrame) canvas.drawBitmap(rgbArrayBitmap, 0, 0, paint);
+                    if (hasFrame) drawFrame(canvas, rgbArrayBitmap, dst, scalePaint);
                     else canvas.drawRGB(0, 0, 0);
                     if (sFpsOverlayEnabled) {
                         canvas.drawText("FPS: " + (Math.round(fps() * 10) / 10)
