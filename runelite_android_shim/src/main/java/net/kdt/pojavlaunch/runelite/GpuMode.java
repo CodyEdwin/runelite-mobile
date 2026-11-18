@@ -23,15 +23,71 @@ final class GpuMode {
     private GpuMode() {
     }
 
+    private static final String HD = "rs117.hd.HdPlugin";
+    private static final long HD_LOAD_WAIT_MS = 120_000; // Plugin Hub plugins load after the core ones
+    private static long t0;
+    private static boolean stockStarted, hdWasActive;
+
+    /**
+     * Watchdog (every 2 s, cheap): runs exactly one GPU renderer. If 117 HD (Plugin Hub) is installed
+     * and enabled it is given the GPU; the stock GPU plugin is started for the session only when 117 HD
+     * isn't used, and again as a fallback when 117 HD stops (it disables itself on startup errors or
+     * an unsupported GPU), so a failed 117 HD leaves the user on stock GPU instead of software.
+     */
     static void install() {
         if (!ENABLED) return;
         patchShaders();
-        final int[] attempts = {0};
-        Timer timer = new Timer(1000, null);
-        timer.addActionListener(e -> {
-            if (tryStart() || ++attempts[0] > 60) timer.stop();
-        });
+        t0 = System.currentTimeMillis();
+        Timer timer = new Timer(2000, e -> tick());
         timer.start();
+    }
+
+    private static void tick() {
+        try {
+            if (RuneLite.getInjector() == null) return;
+            PluginManager pm = RuneLite.getInjector().getInstance(PluginManager.class);
+            boolean started = false;
+            Plugin gpu = null, hd = null;
+            for (Plugin p : pm.getPlugins()) {
+                started |= pm.isPluginActive(p);
+                String n = p.getClass().getName();
+                if (STRETCHED.equals(n)) gpu = p; else if (HD.equals(n)) hd = p;
+            }
+            if (!started || gpu == null) return; // wait for RuneLite's own startPlugins()
+            boolean hdActive = hd != null && pm.isPluginActive(hd);
+            if (hdActive) {
+                if (!hdWasActive) System.out.println("GpuMode: 117 HD is active, stock GPU plugin stays off");
+                hdWasActive = true;
+                if (pm.isPluginActive(gpu)) {
+                    System.out.println("GpuMode: stopping stock GPU plugin (117 HD has the GPU)");
+                    pm.stopPlugin(gpu);
+                }
+                return;
+            }
+            boolean fallback = hdWasActive;
+            hdWasActive = false;
+            if (hd == null && hdExpected() && System.currentTimeMillis() - t0 < HD_LOAD_WAIT_MS) return;
+            if (pm.isPluginActive(gpu) || (stockStarted && !fallback)) return;
+            stockStarted = true;
+            if (fallback) System.out.println("GpuMode: 117 HD stopped, falling back to the stock GPU plugin");
+            if (pm.isPluginEnabled(gpu)) {
+                pm.startPlugin(gpu); // enabled by the user: normal start
+            } else {
+                startForSession(pm, gpu);
+                System.out.println("GpuMode: started GPU plugin for this session");
+            }
+        } catch (Throwable t) {
+            stockStarted = true;
+            System.err.println("GpuMode: " + t);
+        }
+    }
+
+    /** 117 HD is installed from the Plugin Hub and not disabled in the profile (hub jars load late). */
+    private static boolean hdExpected() {
+        net.runelite.client.config.ConfigManager cm = RuneLite.getInjector().getInstance(net.runelite.client.config.ConfigManager.class);
+        String hub = cm.getConfiguration("runelite", "externalPlugins");
+        if (hub == null || !java.util.Arrays.asList(hub.split(",")).contains("117hd")) return false;
+        return !"false".equals(cm.getConfiguration("runelite", "hdplugin"));
     }
 
     /**
@@ -87,31 +143,4 @@ final class GpuMode {
         RuneLite.getInjector().getInstance(net.runelite.client.eventbus.EventBus.class).register(p);
     }
 
-    private static boolean tryStart() {
-        try {
-            if (RuneLite.getInjector() == null) return false;
-            PluginManager pm = RuneLite.getInjector().getInstance(PluginManager.class);
-            boolean started = false;
-            for (Plugin p : pm.getPlugins()) started |= pm.isPluginActive(p);
-            if (!started) return false; // wait for RuneLite's own startPlugins()
-            for (Plugin p : pm.getPlugins()) {
-                if (!STRETCHED.equals(p.getClass().getName())) continue;
-                if (pm.isPluginActive(p)) {
-                    System.out.println("GpuMode: GPU plugin already active");
-                    return true;
-                }
-                if (pm.isPluginEnabled(p)) {
-                    // Enabled by the user: PluginManager starts it itself.
-                    return pm.startPlugin(p) || pm.isPluginActive(p);
-                }
-                startForSession(pm, p);
-                System.out.println("GpuMode: started GPU plugin for this session");
-                return true;
-            }
-            return false; // plugins not loaded yet
-        } catch (Throwable t) {
-            System.err.println("GpuMode: " + t);
-            return true;
-        }
-    }
 }

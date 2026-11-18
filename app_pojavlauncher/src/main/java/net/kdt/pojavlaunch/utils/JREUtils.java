@@ -182,9 +182,15 @@ public class JREUtils {
             // MobileGlues reads $MG_DIR_PATH/config.json; nothing wrote one there, so devices without
             // a hand-made config ran MG defaults (GL 4.0, no compute). Ship the tested config.
             File mgConfig = new File(mgDir, "config.json");
-            if (!mgConfig.exists()) {
+            // maxGlslCacheSize (MB): keep MobileGlues' GLSL->ESSL translations between launches, so
+            // 117 HD's large shader set isn't re-translated on every start. Configs we wrote before
+            // (no cache entry) are upgraded; hand-made ones are left alone.
+            String oldDefault = "{\"enableExtComputeShader\":1,\"customGLVersion\":46}";
+            String current = null;
+            try { if (mgConfig.exists()) current = Tools.read(mgConfig.getAbsolutePath()).trim(); } catch (Exception ignored) { }
+            if (current == null || current.equals(oldDefault)) {
                 try {
-                    Tools.write(mgConfig.getAbsolutePath(), "{\"enableExtComputeShader\":1,\"customGLVersion\":46}");
+                    Tools.write(mgConfig.getAbsolutePath(), "{\"enableExtComputeShader\":1,\"customGLVersion\":46,\"maxGlslCacheSize\":64}");
                 } catch (Exception e) {
                     Log.w("JREUtils", "GPU mode: could not write " + mgConfig, e);
                 }
