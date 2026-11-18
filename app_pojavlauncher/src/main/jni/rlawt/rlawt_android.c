@@ -82,9 +82,48 @@ __attribute__((visibility("default"))) void *glXGetProcAddress(const GLubyte *na
     }
     return f;
 }
+// MobileGlues translates desktop GLSL with glslang at the shader's own #version. 117 HD's
+// shaders are "#version 330" but use backslash line continuations in macros (GLSL 4.20+, accepted
+// by desktop drivers), so glslang rejected them, MobileGlues passed the desktop source through
+// untouched and the GLES compiler failed with "Invalid #version". Join continuations first.
+typedef void (*shsrc_t)(GLuint, GLsizei, const GLchar *const *, const GLint *);
+static shsrc_t p_glShaderSource;
+static void w_glShaderSource(GLuint sh, GLsizei count, const GLchar *const *str, const GLint *len) {
+    size_t total = 0;
+    for (GLsizei i = 0; i < count; i++) total += (len && len[i] >= 0) ? (size_t) len[i] : strlen(str[i]);
+    char *buf = malloc(total + 1);
+    if (!buf) { p_glShaderSource(sh, count, str, len); return; }
+    size_t o = 0;
+    for (GLsizei i = 0; i < count; i++) {
+        size_t l = (len && len[i] >= 0) ? (size_t) len[i] : strlen(str[i]);
+        memcpy(buf + o, str[i], l); o += l;
+    }
+    buf[o] = 0;
+    size_t w = 0;
+    for (size_t r = 0; r < o; r++) {
+        if (buf[r] == '\\') {
+            size_t k = r + 1;
+            if (k < o && buf[k] == '\r') k++;
+            if (k < o && buf[k] == '\n') { r = k; continue; }
+        }
+        buf[w++] = buf[r];
+    }
+    buf[w] = 0;
+    const GLchar *one[1] = { buf };
+    p_glShaderSource(sh, 1, one, NULL);
+    free(buf);
+}
+
 static void *resolve(const GLubyte *name) {
     if (!name) return NULL;
     const char *n = (const char *) name;
+    if (!strcmp(n, "glShaderSource") || !strcmp(n, "glShaderSourceARB")) {
+        if (!p_glShaderSource) {
+            p_glShaderSource = (shsrc_t) p_glXGetProcAddress((const GLubyte *) "glShaderSource");
+            if (!p_glShaderSource) p_glShaderSource = (shsrc_t) dlsym(mg, "glShaderSource");
+        }
+        if (p_glShaderSource) return (void *) w_glShaderSource;
+    }
     if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
     if (!strcmp(n, "glRenderbufferStorageMultisample")) return (void *) w_glRenderbufferStorageMultisample;
     void *f = p_glXGetProcAddress(name);
