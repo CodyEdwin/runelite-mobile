@@ -94,9 +94,7 @@ final class AAudioLine implements SourceDataLine {
     public synchronized void flush() {
         if (stream == 0) return;
         boolean was = running;
-        if (was) nPause(stream);
         nFlush(stream);
-        if (was) nStart(stream);
     }
 
     private long dbgNext, dbgWrites, dbgBytes;
@@ -104,7 +102,7 @@ final class AAudioLine implements SourceDataLine {
 
     private void debug(long s, int avail) {
         long now = System.currentTimeMillis();
-        if (now < dbgNext || dbgLines > 60) return;
+        if (now < dbgNext || dbgLines > 20) return;
         dbgNext = now + 1000;
         dbgLines++;
         System.out.println("AAudioLine: queued=" + nQueued(s) + " read=" + nFramesRead(s) + " avail=" + avail
@@ -136,7 +134,10 @@ final class AAudioLine implements SourceDataLine {
             int r = nWrite(s, b, off + done, (len - done) / frameSize, frameSize, 100_000_000L);
             if (r < 0) { System.out.println("AAudioLine: write error " + r); break; }
             done += r * frameSize;
-            if (r == 0 && !running) break; // stopped and full: don't block forever
+            if (r == 0) {
+                if (!running) break; // stopped and full: don't block forever
+                try { Thread.sleep(2); } catch (InterruptedException e) { break; }
+            }
         }
         dbgWrites++;
         dbgBytes += done;

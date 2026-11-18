@@ -3,6 +3,9 @@
 #include <jni.h>
 #include <dlfcn.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdatomic.h>
 #include <android/log.h>
 #include <aaudio/AAudio.h>
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "rlaudio", __VA_ARGS__)
@@ -30,6 +33,7 @@ F(int64_t, AAudioStream_getFramesRead, (AAudioStream*))
 F(int32_t, AAudioStream_getBufferCapacityInFrames, (AAudioStream*))
 F(aaudio_result_t, AAudioStream_setBufferSizeInFrames, (AAudioStream*, int32_t))
 F(int32_t, AAudioStream_getSampleRate, (AAudioStream*))
+F(void, AAudioStreamBuilder_setDataCallback, (AAudioStreamBuilder*, AAudioStream_dataCallback, void*))
 #undef F
 #define L(name) if (!(p_##name = dlsym(lib, #name))) { LOG("missing %s", #name); return JNI_FALSE; }
 #define JF(name) Java_net_kdt_pojavlaunch_runelite_sound_AAudioLine_##name
@@ -44,49 +48,90 @@ JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *e, jclass c) {
     L(AAudioStreamBuilder_delete) L(AAudioStream_requestStart) L(AAudioStream_requestPause) L(AAudioStream_requestFlush)
     L(AAudioStream_requestStop) L(AAudioStream_close) L(AAudioStream_write) L(AAudioStream_getFramesWritten)
     L(AAudioStream_getFramesRead) L(AAudioStream_getBufferCapacityInFrames) L(AAudioStream_setBufferSizeInFrames)
-    L(AAudioStream_getSampleRate)
+    L(AAudioStream_getSampleRate) L(AAudioStreamBuilder_setDataCallback)
     return JNI_TRUE;
 }
 
-// format: 0 = PCM16, 1 = float. Returns the stream handle or 0.
+// Callback stream with our own ring buffer: AAudio pulls frames as the device needs them (silence
+// when the game has not written enough), so playback always runs and the read position the game
+// polls through available() advances. A blocking-write legacy stream only started once its whole
+// buffer was full, which the game never does (it keeps ~2048 frames queued), so nothing played and
+// the game reopened the line every 4 s.
+typedef struct {
+    AAudioStream *s;
+    int16_t *ring;
+    int32_t cap, ch;
+    _Atomic int64_t wr, rd;
+} Line;
+
+static aaudio_data_callback_result_t cb(AAudioStream *st, void *user, void *audio, int32_t n) {
+    Line *l = user;
+    int16_t *out = audio;
+    int64_t rd = atomic_load(&l->rd), wr = atomic_load(&l->wr);
+    int32_t take = (int32_t) (wr - rd < n ? wr - rd : n);
+    for (int32_t i = 0; i < take; i++) {
+        int32_t idx = (int32_t) ((rd + i) % l->cap);
+        memcpy(out + (size_t) i * l->ch, l->ring + (size_t) idx * l->ch, l->ch * 2);
+    }
+    if (take < n) memset(out + (size_t) take * l->ch, 0, (size_t) (n - take) * l->ch * 2);
+    atomic_store(&l->rd, rd + take);
+    return AAUDIO_CALLBACK_RESULT_CONTINUE;
+}
+
 JNIEXPORT jlong JNICALL JF(nOpen)(JNIEnv *e, jclass c, jint rate, jint channels, jint bufferFrames) {
-    AAudioStreamBuilder *b; AAudioStream *s = NULL;
-    if (p_AAudio_createStreamBuilder(&b) != AAUDIO_OK) return 0;
+    Line *l = calloc(1, sizeof(Line));
+    l->cap = bufferFrames; l->ch = channels;
+    l->ring = calloc((size_t) bufferFrames * channels, 2);
+    AAudioStreamBuilder *b;
+    if (p_AAudio_createStreamBuilder(&b) != AAUDIO_OK) { free(l->ring); free(l); return 0; }
     p_AAudioStreamBuilder_setSampleRate(b, rate);
     p_AAudioStreamBuilder_setChannelCount(b, channels);
     p_AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
-    p_AAudioStreamBuilder_setBufferCapacityInFrames(b, bufferFrames * 2);
     p_AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_NONE);
     p_AAudioStreamBuilder_setUsage(b, AAUDIO_USAGE_GAME);
     p_AAudioStreamBuilder_setContentType(b, AAUDIO_CONTENT_TYPE_SONIFICATION);
-    aaudio_result_t r = p_AAudioStreamBuilder_openStream(b, &s);
+    p_AAudioStreamBuilder_setDataCallback(b, cb, l);
+    aaudio_result_t r = p_AAudioStreamBuilder_openStream(b, &l->s);
     p_AAudioStreamBuilder_delete(b);
-    if (r != AAUDIO_OK) { LOG("openStream %d Hz %d ch: %d", rate, channels, r); return 0; }
-    p_AAudioStream_setBufferSizeInFrames(s, bufferFrames);
-    LOG("opened %d Hz (device %d) %d ch, buffer %d frames (capacity %d)", rate, p_AAudioStream_getSampleRate(s), channels,
-        bufferFrames, p_AAudioStream_getBufferCapacityInFrames(s));
-    return (jlong) (intptr_t) s;
+    if (r != AAUDIO_OK) { LOG("openStream %d Hz %d ch: %d", rate, channels, r); free(l->ring); free(l); return 0; }
+    LOG("opened %d Hz (device %d) %d ch, ring %d frames, callback", rate, p_AAudioStream_getSampleRate(l->s), channels, bufferFrames);
+    return (jlong) (intptr_t) l;
 }
 
+// Copies as many frames as fit into the ring (never blocks); returns frames copied.
 JNIEXPORT jint JNICALL JF(nWrite)(JNIEnv *e, jclass c, jlong h, jbyteArray data, jint off, jint frames, jint frameSize, jlong timeoutNanos) {
+    Line *l = (Line *) (intptr_t) h;
+    int64_t wr = atomic_load(&l->wr), rd = atomic_load(&l->rd);
+    int32_t space = (int32_t) (l->cap - (wr - rd));
+    int32_t n = frames < space ? frames : space;
+    if (n <= 0) return 0;
     jbyte *buf = (*e)->GetByteArrayElements(e, data, NULL);
-    aaudio_result_t r = p_AAudioStream_write((AAudioStream *) (intptr_t) h, buf + off, frames, timeoutNanos);
+    const int16_t *src = (const int16_t *) (buf + off);
+    for (int32_t i = 0; i < n; i++) {
+        int32_t idx = (int32_t) ((wr + i) % l->cap);
+        memcpy(l->ring + (size_t) idx * l->ch, src + (size_t) i * l->ch, l->ch * 2);
+    }
     (*e)->ReleaseByteArrayElements(e, data, buf, JNI_ABORT);
-    return r;
+    atomic_store(&l->wr, wr + n);
+    return n;
 }
 
 JNIEXPORT jlong JNICALL JF(nQueued)(JNIEnv *e, jclass c, jlong h) {
-    AAudioStream *s = (AAudioStream *) (intptr_t) h;
-    int64_t q = p_AAudioStream_getFramesWritten(s) - p_AAudioStream_getFramesRead(s);
-    return q < 0 ? 0 : q;
+    Line *l = (Line *) (intptr_t) h;
+    return atomic_load(&l->wr) - atomic_load(&l->rd);
 }
 
-JNIEXPORT jlong JNICALL JF(nFramesRead)(JNIEnv *e, jclass c, jlong h) { return p_AAudioStream_getFramesRead((AAudioStream *) (intptr_t) h); }
-JNIEXPORT void JNICALL JF(nStart)(JNIEnv *e, jclass c, jlong h) { p_AAudioStream_requestStart((AAudioStream *) (intptr_t) h); }
-JNIEXPORT void JNICALL JF(nPause)(JNIEnv *e, jclass c, jlong h) { p_AAudioStream_requestPause((AAudioStream *) (intptr_t) h); }
-JNIEXPORT void JNICALL JF(nFlush)(JNIEnv *e, jclass c, jlong h) { p_AAudioStream_requestFlush((AAudioStream *) (intptr_t) h); }
+JNIEXPORT jlong JNICALL JF(nFramesRead)(JNIEnv *e, jclass c, jlong h) { return atomic_load(&((Line *) (intptr_t) h)->rd); }
+JNIEXPORT void JNICALL JF(nStart)(JNIEnv *e, jclass c, jlong h) { p_AAudioStream_requestStart(((Line *) (intptr_t) h)->s); }
+JNIEXPORT void JNICALL JF(nPause)(JNIEnv *e, jclass c, jlong h) { p_AAudioStream_requestPause(((Line *) (intptr_t) h)->s); }
+JNIEXPORT void JNICALL JF(nFlush)(JNIEnv *e, jclass c, jlong h) {
+    Line *l = (Line *) (intptr_t) h;
+    atomic_store(&l->rd, atomic_load(&l->wr)); // drop queued frames
+}
 JNIEXPORT void JNICALL JF(nClose)(JNIEnv *e, jclass c, jlong h) {
-    AAudioStream *s = (AAudioStream *) (intptr_t) h;
-    p_AAudioStream_requestStop(s);
-    p_AAudioStream_close(s);
+    Line *l = (Line *) (intptr_t) h;
+    p_AAudioStream_requestStop(l->s);
+    p_AAudioStream_close(l->s);
+    free(l->ring);
+    free(l);
 }
