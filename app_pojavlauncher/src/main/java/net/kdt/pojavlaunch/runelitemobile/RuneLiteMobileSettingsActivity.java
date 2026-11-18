@@ -31,7 +31,7 @@ public class RuneLiteMobileSettingsActivity extends AppCompatActivity {
         root.setBackgroundColor(0xFF1B1B1B);
 
         int deviceRam = Tools.getTotalDeviceMemory(this);
-        int max = Math.max(MIN_RAM + STEP, Math.min(deviceRam - 1024, 4096));
+        int max = Math.max(MIN_RAM + STEP, Math.min(net.kdt.pojavlaunch.utils.JREUtils.safeMaxHeapMb(this), 4096));
         int current = Math.max(MIN_RAM, Math.min(max, prefs.getInt("allocation", LauncherPreferences.PREF_RAM_ALLOCATION)));
 
         TextView title = new TextView(this);
@@ -49,7 +49,7 @@ public class RuneLiteMobileSettingsActivity extends AppCompatActivity {
         root.addView(bar);
         TextView hint = new TextView(this);
         hint.setTextColor(0xFFAAAAAA);
-        hint.setText("Device memory: " + deviceRam + " MB. Applied as -Xms/-Xmx the next time you press PLAY. "
+        hint.setText("Device memory: " + deviceRam + " MB. Applied as the maximum Java heap (-Xmx) the next time you press PLAY; the heap starts small and only grows as needed. "
                 + "More is not always faster: leave room for Android (about 1 GB+), or the app may be killed in the background.");
         root.addView(hint);
         value.setText(current + " MB");

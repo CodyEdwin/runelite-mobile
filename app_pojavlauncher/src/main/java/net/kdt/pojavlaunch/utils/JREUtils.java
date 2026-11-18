@@ -263,8 +263,13 @@ public class JREUtils {
         purgeArg(userArgs, "-XX:ActiveProcessorCount");
 
         //Add automatically generated args
-        userArgs.add("-Xms" + LauncherPreferences.PREF_RAM_ALLOCATION + "M");
-        userArgs.add("-Xmx" + LauncherPreferences.PREF_RAM_ALLOCATION + "M");
+        // The slider sets the maximum heap. Starting the heap small (instead of -Xms = -Xmx) lets the
+        // JVM grow only as far as RuneLite needs: a fully sized 2.6 GB heap on a 4 GB phone pushed
+        // the system into swap and made the game stutter even at 40+ FPS.
+        int maxHeap = Math.min(LauncherPreferences.PREF_RAM_ALLOCATION, safeMaxHeapMb(activity));
+        userArgs.add("-Xms" + Math.min(256, maxHeap) + "M");
+        userArgs.add("-Xmx" + maxHeap + "M");
+        userArgs.add("-Xlog:gc:file=" + Tools.DIR_GAME_HOME + "/gc.log::filecount=0");
 
         // Some phones are not using the right number of cores, fix that
         userArgs.add("-XX:ActiveProcessorCount=" + java.lang.Runtime.getRuntime().availableProcessors());
@@ -439,6 +444,11 @@ public class JREUtils {
     /** @return 1 updated, 0 unchanged/not ready, -N screen has N pixels (bitmap size mismatch) */
     public static native int renderAWTScreenFrameToBitmap(android.graphics.Bitmap bitmap, boolean force);
     public static native int setThreadAffinity(int tid, long mask);
+
+    /** Largest heap that leaves the rest of the phone room to breathe: 60% of RAM, at least 768 MB. */
+    public static int safeMaxHeapMb(android.content.Context ctx) {
+        return Math.max(768, Tools.getTotalDeviceMemory(ctx) * 60 / 100);
+    }
     static {
         System.loadLibrary("exithook");
         System.loadLibrary("pojavexec");
