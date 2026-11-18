@@ -50,7 +50,7 @@ final class InputFocus {
         }
     }
 
-    private static Component findCanvas(Component c) {
+    static Component findCanvas(Component c) {
         if (c instanceof Canvas && c.isShowing()) return c;
         if (c instanceof java.awt.Container) {
             for (Component child : ((java.awt.Container) c).getComponents()) {

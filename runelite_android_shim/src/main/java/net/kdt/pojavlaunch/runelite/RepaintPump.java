@@ -34,14 +34,43 @@ final class RepaintPump {
         });
     }
 
+    private static int sTicks;
+
     private static void pump() {
         InputFocus.ensureFocusOwner();
+        WindowFitter.enforce();
+        if ((sTicks++ % 30) == 0) simpleScrollViewports();
+        if (sTicks % 150 == 0 && sTicks <= 150 * 12) WindowFitter.debugDump();
         for (Window window : Window.getWindows()) {
             if (!window.isShowing()) continue;
             if (!window.isValid()) window.validate();
             RepaintManager manager = RepaintManager.currentManager(window);
             manager.validateInvalidComponents();
             manager.paintDirtyRegions();
+        }
+        PopupOverdraw.snapshot();
+    }
+
+    /**
+     * JViewport's default BLIT_SCROLL_MODE scrolls with Graphics#copyArea on the window and only
+     * repaints the newly exposed strip; on the cacio screen that left scrolled plugin lists blank.
+     */
+    private static void simpleScrollViewports() {
+        for (Window window : Window.getWindows()) {
+            if (window.isShowing()) simpleScroll(window);
+        }
+    }
+
+    private static void simpleScroll(java.awt.Component c) {
+        if (c instanceof javax.swing.JViewport) {
+            javax.swing.JViewport v = (javax.swing.JViewport) c;
+            if (v.getScrollMode() != javax.swing.JViewport.SIMPLE_SCROLL_MODE) {
+                v.setScrollMode(javax.swing.JViewport.SIMPLE_SCROLL_MODE);
+                v.repaint();
+            }
+        }
+        if (c instanceof java.awt.Container) {
+            for (java.awt.Component child : ((java.awt.Container) c).getComponents()) simpleScroll(child);
         }
     }
 

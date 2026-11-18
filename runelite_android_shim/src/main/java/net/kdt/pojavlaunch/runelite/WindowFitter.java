@@ -40,14 +40,14 @@ final class WindowFitter {
 
     private static final Map<Window, Boolean> sDecorated = new WeakHashMap<>();
     private static final Map<Window, Timer> sRefitTimers = new WeakHashMap<>();
-    private static final boolean DEBUG = !"false".equals(System.getProperty("runelite.android.debugWindows"));
+    private static final boolean DEBUG = Boolean.getBoolean("runelite.android.debugWindows");
 
     private WindowFitter() {
     }
 
     static void install() {
         Toolkit.getDefaultToolkit().addAWTEventListener(WindowFitter::onEvent,
-                AWTEvent.WINDOW_EVENT_MASK | AWTEvent.COMPONENT_EVENT_MASK);
+                AWTEvent.WINDOW_EVENT_MASK | AWTEvent.COMPONENT_EVENT_MASK | AWTEvent.WINDOW_STATE_EVENT_MASK);
     }
 
     private static Rectangle screenBounds() {
@@ -67,7 +67,8 @@ final class WindowFitter {
 
         if (id == WindowEvent.WINDOW_OPENED || id == ComponentEvent.COMPONENT_SHOWN) {
             SwingUtilities.invokeLater(() -> fit(window, true));
-        } else if (id == ComponentEvent.COMPONENT_MOVED || id == ComponentEvent.COMPONENT_RESIZED) {
+        } else if (id == ComponentEvent.COMPONENT_MOVED || id == ComponentEvent.COMPONENT_RESIZED
+                || id == WindowEvent.WINDOW_STATE_CHANGED) {
             if (window.isShowing()) scheduleRefit(window);
         }
     }
@@ -87,6 +88,14 @@ final class WindowFitter {
         Rectangle screen = screenBounds();
         if (isMainFrame(window)) {
             if (opened) stripChrome((Frame) window);
+            // Plugins (e.g. a "Fullscreen" plugin calling GraphicsDevice#setFullScreenWindow and then
+            // Frame#setExtendedState(previousState)) or RuneLite itself can reset the frame to NORMAL.
+            // RuneLite then grows the frame by the sidebar width instead of shrinking the game.
+            boolean relayout = markMaximized((Frame) window);
+            if (relayout && window instanceof JFrame) {
+                ((JFrame) window).getContentPane().invalidate();
+                ((JFrame) window).getRootPane().revalidate();
+            }
             if (!window.getBounds().equals(screen)) {
                 if (DEBUG) System.out.println("WindowFitter: main frame " + window.getBounds() + " -> " + screen);
                 setBounds(window, screen);
@@ -113,8 +122,37 @@ final class WindowFitter {
 
     private static int sDumps;
 
+    /**
+     * Called on every RepaintPump tick. Cacio does not post COMPONENT_RESIZED/MOVED for frames whose
+     * bounds are changed by the application (ClientUI#containedSetSize, plugins, Frame#setBounds),
+     * so the event listener alone missed RuneLite shrinking the frame (e.g. to its 503px minimum
+     * height, leaving a black band at the bottom) or growing it past the right edge.
+     */
+    private static int sEnforced;
+
+    static void enforce() {
+        Rectangle screen = null;
+        for (Window w : Window.getWindows()) {
+            if (!w.isShowing() || !isMainFrame(w)) continue;
+            if (screen == null) screen = screenBounds();
+            boolean lostMaximized = (((Frame) w).getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH;
+            if (lostMaximized || !w.getBounds().equals(screen)) {
+                if (DEBUG && sEnforced++ < 50) System.out.println("WindowFitter: enforce #" + sEnforced + " " + w.getBounds() + " state=" + ((Frame) w).getExtendedState());
+                fit(w, false);
+            }
+        }
+    }
+
+    /** Debug: periodic layout dump of the main frame (RepaintPump). */
+    static void debugDump() {
+        if (!DEBUG) return;
+        for (Window w : Window.getWindows()) {
+            if (w.isShowing() && isMainFrame(w)) dump(w, screenBounds());
+        }
+    }
+
     private static void dump(Window window, Rectangle screen) {
-        if (sDumps++ > 30) return;
+        if (sDumps++ > 200) return;
         StringBuilder sb = new StringBuilder("WindowFitter: screen=").append(screen)
                 .append(" state=").append(((Frame) window).getExtendedState()).append('\n');
         dump(sb, window, 0);
@@ -126,7 +164,7 @@ final class WindowFitter {
         sb.append(c.getClass().getName()).append(' ').append(c.getBounds())
                 .append(c.isVisible() ? "" : " hidden").append(" pref=").append(c.getPreferredSize())
                 .append(" min=").append(c.getMinimumSize()).append('\n');
-        if (depth < 4 && c instanceof java.awt.Container) {
+        if (depth < 6 && c instanceof java.awt.Container) {
             for (java.awt.Component child : ((java.awt.Container) c).getComponents()) dump(sb, child, depth + 1);
         }
     }
@@ -144,14 +182,17 @@ final class WindowFitter {
      * 4px border. With the state set, ClientUI.Layout sizes the game as contentWidth - sidebar,
      * exactly like a maximised desktop window. Needs --add-opens java.desktop/java.awt.
      */
-    private static void markMaximized(Frame frame) {
-        if ((frame.getExtendedState() & Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH) return;
+    private static boolean markMaximized(Frame frame) {
+        if ((frame.getExtendedState() & Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH) return false;
         try {
             java.lang.reflect.Field state = Frame.class.getDeclaredField("state");
             state.setAccessible(true);
-            state.setInt(frame, state.getInt(frame) | Frame.MAXIMIZED_BOTH);
+            state.setInt(frame, (state.getInt(frame) & ~Frame.ICONIFIED) | Frame.MAXIMIZED_BOTH);
+            System.out.println("WindowFitter: main frame state was " + frame.getExtendedState() + ", re-marked maximised");
+            return true;
         } catch (ReflectiveOperationException | RuntimeException e) {
             System.err.println("WindowFitter: unable to mark the RuneLite frame maximised: " + e);
+            return false;
         }
     }
 
@@ -166,7 +207,10 @@ final class WindowFitter {
             rootPane.setWindowDecorationStyle(JRootPane.NONE);
         }
         markMaximized(frame);
-        SwingUtilities.invokeLater(() -> ToolbarMover.relocate(jFrame));
+        SwingUtilities.invokeLater(() -> {
+            ToolbarMover.relocate(jFrame);
+            PopupOverdraw.install();
+        });
         if (jFrame.getContentPane() instanceof JComponent) {
             // RuneLite adds a 4px border when the frame is not maximised; cacio never reports
             // a maximised state, so the border would always be there.

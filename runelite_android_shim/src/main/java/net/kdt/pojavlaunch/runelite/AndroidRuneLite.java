@@ -26,6 +26,10 @@ public final class AndroidRuneLite {
 
     public static void main(String[] args) throws Throwable {
         System.setProperty(ANDROID_PROPERTY, "true");
+        // Swing's per-window BufferStrategy painting assumes the window system keeps window contents
+        // and only repaints damaged areas; on the cacio screen that lost sidebar/panel contents.
+        if (System.getProperty("swing.bufferPerWindow") == null) System.setProperty("swing.bufferPerWindow", "false");
+        javax.swing.SwingUtilities.invokeAndWait(LockingRepaintManager::install);
         WindowFitter.install();
         RepaintPump.install();
         InputFocus.install();
