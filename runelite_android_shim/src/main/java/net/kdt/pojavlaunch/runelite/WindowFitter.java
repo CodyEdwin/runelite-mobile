@@ -40,7 +40,7 @@ final class WindowFitter {
 
     private static final Map<Window, Boolean> sDecorated = new WeakHashMap<>();
     private static final Map<Window, Timer> sRefitTimers = new WeakHashMap<>();
-    private static final boolean DEBUG = Boolean.getBoolean("runelite.android.debugWindows");
+    private static final boolean DEBUG = !"false".equals(System.getProperty("runelite.android.debugWindows"));
 
     private WindowFitter() {
     }
@@ -108,6 +108,27 @@ final class WindowFitter {
             if (!fitted.equals(b)) setBounds(window, fitted);
         }
         // Other Window types (tooltips, heavyweight popup menus) are positioned by Swing itself.
+        if (DEBUG && isMainFrame(window)) dump(window, screen);
+    }
+
+    private static int sDumps;
+
+    private static void dump(Window window, Rectangle screen) {
+        if (sDumps++ > 30) return;
+        StringBuilder sb = new StringBuilder("WindowFitter: screen=").append(screen)
+                .append(" state=").append(((Frame) window).getExtendedState()).append('\n');
+        dump(sb, window, 0);
+        System.out.print(sb);
+    }
+
+    private static void dump(StringBuilder sb, java.awt.Component c, int depth) {
+        for (int i = 0; i < depth; i++) sb.append("  ");
+        sb.append(c.getClass().getName()).append(' ').append(c.getBounds())
+                .append(c.isVisible() ? "" : " hidden").append(" pref=").append(c.getPreferredSize())
+                .append(" min=").append(c.getMinimumSize()).append('\n');
+        if (depth < 4 && c instanceof java.awt.Container) {
+            for (java.awt.Component child : ((java.awt.Container) c).getComponents()) dump(sb, child, depth + 1);
+        }
     }
 
     private static void setBounds(Window window, Rectangle bounds) {

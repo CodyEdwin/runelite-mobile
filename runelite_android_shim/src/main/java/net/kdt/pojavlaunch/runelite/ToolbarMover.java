@@ -29,7 +29,9 @@ final class ToolbarMover {
             Object injector = runeLite.getMethod("getInjector").invoke(null);
             if (injector == null) return;
             Class<?> clientUiClass = Class.forName("net.runelite.client.ui.ClientUI");
-            Object ui = injector.getClass().getMethod("getInstance", Class.class).invoke(injector, clientUiClass);
+            // Call through the public Injector interface: InjectorImpl itself is package-private.
+                      Object ui = Class.forName("com.google.inject.Injector").getMethod("getInstance", Class.class)
+                              .invoke(injector, clientUiClass);
 
             Field withTitleBar = field(clientUiClass, "withTitleBar");
             if (!withTitleBar.getBoolean(ui)) return;

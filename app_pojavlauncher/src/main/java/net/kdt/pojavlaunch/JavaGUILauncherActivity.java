@@ -241,7 +241,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             final Uri resourceUri = (Uri) extras.getParcelable("modUri");
             if(extras.getBoolean("openLogOutput", false)) openLogOutput(null);
             if (mRuneLite) {
-                startRuneLite();
+                startRuneLiteWhenLaidOut();
             } else if (javaArgs != null) {
                 startModInstaller(null, javaArgs);
             }else if(resourceUri != null) {
@@ -262,6 +262,34 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 Tools.dialogForceClose(JavaGUILauncherActivity.this);
             }
         });
+    }
+
+    /**
+     * Size the AWT virtual screen from the space the TextureView really gets, not the raw display:
+     * some devices (Motorola's per-app "full screen" setting, OEM cutout policies) keep the window
+     * out of the camera cutout regardless of layoutInDisplayCutoutMode, and a virtual screen with the
+     * display's aspect ratio is then shrunk and letterboxed inside the smaller view.
+     */
+    private void startRuneLiteWhenLaidOut() {
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final boolean[] started = {false};
+        final Runnable start = () -> {
+            if (started[0]) return;
+            started[0] = true;
+            int w = mTextureView.getWidth(), h = mTextureView.getHeight();
+            if (w > 0 && h > 0) {
+                Point size = AWTCanvasView.getRuneLiteCanvasSize(Math.max(w, h), Math.min(w, h));
+                AWTCanvasView.setCanvasSize(size.x, size.y);
+                android.util.Log.i("JavaGUILauncher", "RuneLite screen " + size.x + "x" + size.y + " for view " + w + "x" + h);
+            }
+            startRuneLite();
+        };
+        mTextureView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (started[0]) return;
+            handler.removeCallbacks(start);
+            handler.postDelayed(start, 400); // let immersive mode / insets settle
+        });
+        handler.postDelayed(start, 2500); // fallback if no further layout pass happens
     }
 
     private void startModInstallerWithUri(Uri uri) {
@@ -329,6 +357,11 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     args.add("net.runelite.client.RuneLite");
                 }
                 args.add("--developer-mode");
+                try {
+                    Tools.syncRuneLiteSideloadedPlugins();
+                } catch (Exception e) {
+                    Log.w("JavaGUILauncher", "Unable to sync sideloaded plugins", e);
+                }
                 launchJavaRuntime(runtime, null, args);
             } catch (Throwable t) {
                 Tools.showError(this, t, true);
@@ -504,6 +537,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     }
 
     private boolean isHardwareMouse(MotionEvent event) {
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE) || event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)
+                || event.isFromSource(InputDevice.SOURCE_TOUCHPAD)) return true;
         for (int i = 0; i < event.getPointerCount(); i++) {
             if (event.getToolType(i) == MotionEvent.TOOL_TYPE_MOUSE) return true;
         }
@@ -536,6 +571,13 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         }
 
         int buttonState = event.getButtonState();
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_BUTTON_PRESS) buttonState |= event.getActionButton();
+        else if (action == MotionEvent.ACTION_BUTTON_RELEASE) buttonState &= ~event.getActionButton();
+        else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) buttonState = 0;
+        else if (action == MotionEvent.ACTION_DOWN && buttonState == 0) buttonState = MotionEvent.BUTTON_PRIMARY;
+        // Stylus/touchpad buttons map onto the mouse ones.
+        if ((buttonState & MotionEvent.BUTTON_STYLUS_PRIMARY) != 0) buttonState |= MotionEvent.BUTTON_SECONDARY;
         int changedButtons = mMouseButtonState ^ buttonState;
         if ((changedButtons & MotionEvent.BUTTON_PRIMARY) != 0) {
             AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK,
@@ -578,8 +620,9 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         if (event.getDevice() != null
                 && ((event.getSource() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE)
                 && keyCode == KeyEvent.KEYCODE_BACK) {
-            AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON3_DOWN_MASK,
-                    event.getAction() == KeyEvent.ACTION_DOWN);
+            // Fallback right click synthesized by Android for an unconsumed secondary button: the
+            // button itself is already handled from the MotionEvent button state, so just eat it
+            // (it must not reach the activity as BACK).
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event);

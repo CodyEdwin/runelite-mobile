@@ -643,6 +643,49 @@ public final class Tools {
         return new File(getRuneLiteDir(), "runelite.jar");
     }
 
+    /**
+     * Folder users drop plugin jars into. RuneLite itself loads them from ~/.runelite/sideloaded-plugins
+     * (developer mode, which the Android launcher always enables), but ".runelite" is a hidden folder
+     * that file managers / the system file picker don't show, so jars are mirrored from this visible
+     * folder on every launch (removing one here removes it from RuneLite too).
+     */
+    public static File getRuneLiteSideloadDir() {
+        return new File(getRuneLiteDir(), "sideloaded-plugins");
+    }
+
+    public static void syncRuneLiteSideloadedPlugins() throws IOException {
+        File visible = getRuneLiteSideloadDir();
+        File target = new File(getRuneLiteDir(), ".runelite/sideloaded-plugins");
+        FileUtils.ensureDirectory(visible);
+        FileUtils.ensureDirectory(target);
+        File manifest = new File(target, ".mirrored");
+        java.util.Set<String> previous = new java.util.HashSet<>();
+        if (manifest.isFile()) {
+            try (InputStream input = new FileInputStream(manifest)) {
+                for (String line : read(input).split("\n")) if (!line.trim().isEmpty()) previous.add(line.trim());
+            }
+        }
+        StringBuilder mirrored = new StringBuilder();
+        File[] jars = visible.listFiles((dir, name) -> name.endsWith(".jar"));
+        java.util.Set<String> present = new java.util.HashSet<>();
+        if (jars != null) {
+            for (File jar : jars) {
+                present.add(jar.getName());
+                File copy = new File(target, jar.getName());
+                if (!copy.isFile() || copy.length() != jar.length() || copy.lastModified() < jar.lastModified()) {
+                    org.apache.commons.io.FileUtils.copyFile(jar, copy);
+                }
+                mirrored.append(jar.getName()).append('\n');
+            }
+        }
+        for (String name : previous) {
+            if (!present.contains(name)) new File(target, name).delete();
+        }
+        try (FileOutputStream output = new FileOutputStream(manifest)) {
+            output.write(mirrored.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+    }
+
     /** Android entry point + overrides, see runelite_android_shim/ in the repository root. */
     public static File getRuneLiteAndroidJar() {
         return new File(getRuneLiteDir(), "runelite-android.jar");

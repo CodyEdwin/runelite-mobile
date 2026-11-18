@@ -166,8 +166,8 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     @Override
     public void run() {
         Canvas canvas;
-        final int canvasWidth = getCanvasWidth();
-        final int canvasHeight = getCanvasHeight();
+        int canvasWidth = getCanvasWidth();
+        int canvasHeight = getCanvasHeight();
         Surface surface = new Surface(getSurfaceTexture());
         Bitmap rgbArrayBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888);
         Paint paint = new Paint();
@@ -178,6 +178,19 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                 canvas = surface.lockCanvas(null);
                 try {
                     int[] rgbArray = JREUtils.renderAWTScreenFrame();
+                    if (rgbArray != null && rgbArray.length != canvasWidth * canvasHeight
+                            && rgbArray.length == getCanvasWidth() * getCanvasHeight()) {
+                        // The virtual screen size was finalised (from the laid-out view) after
+                        // this thread started: follow it.
+                        canvasWidth = getCanvasWidth();
+                        canvasHeight = getCanvasHeight();
+                        rgbArrayBitmap.recycle();
+                        rgbArrayBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888);
+                        getSurfaceTexture().setDefaultBufferSize(canvasWidth, canvasHeight);
+                        post(() -> updateFitTransform(getWidth(), getHeight()));
+                        hasFrame = false;
+                        Log.i("AWTCanvasView", "virtual screen resized to " + canvasWidth + "x" + canvasHeight);
+                    }
                     if (rgbArray != null && rgbArray.length == canvasWidth * canvasHeight) {
                         rgbArrayBitmap.setPixels(rgbArray, 0, canvasWidth, 0, 0, canvasWidth, canvasHeight);
                         hasFrame = true;
