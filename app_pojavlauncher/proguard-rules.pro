@@ -25,3 +25,6 @@
  -keep class net.kdt.pojavlaunch.prefs.screens** {*;}
 
 
+
+# RuneLite client updater: state/manifest classes are (de)serialized with Gson
+-keep class net.kdt.pojavlaunch.runeliteupdate.** { *; }

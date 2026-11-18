@@ -42,5 +42,6 @@ public final class AndroidRuneLite {
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
+        LaunchConfirm.start();
     }
 }

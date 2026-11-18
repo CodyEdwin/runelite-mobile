@@ -90,6 +90,10 @@ public class MainMenuFragment extends Fragment {
         }
 
         mOpenDirectoryButton.setOnClickListener((v)-> openPath(v.getContext(), getCurrentProfileDirectory(), false));
+
+        View runeLiteClientButton = view.findViewById(R.id.runelite_client_button);
+        if (runeLiteClientButton != null) runeLiteClientButton.setOnClickListener(v ->
+                net.kdt.pojavlaunch.runeliteupdate.RuneLiteUpdates.showDialog(requireActivity()));
     }
 
     private File getCurrentProfileDirectory() {

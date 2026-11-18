@@ -61,6 +61,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
     /** Launch the bundled RuneLite client instead of a jar installer. */
     public static final String EXTRA_RUNELITE = "runeLite";
+    /** Classpath of a downloaded official RuneLite release; absent = the bundled runelite.jar. */
+    public static final String EXTRA_RUNELITE_CLASSPATH = "runeLiteClasspath";
+    public static final String EXTRA_RUNELITE_VERSION = "runeLiteVersion";
+    public static final String EXTRA_RUNELITE_JVM_ARGS = "runeLiteJvmArgs";
     /** Name of the Java runtime that should be used (optional, avoids re-picking it). */
     public static final String EXTRA_RUNTIME = "runtimeName";
     /** RuneLite profile name (from ~/.runelite/profiles2) to start with, or null for the active one. */
@@ -314,7 +318,19 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         new Thread(() -> {
             try {
                 File jar = Tools.getRuneLiteJar();
-                if(!jar.isFile()) {
+                String clientClasspath = getIntent().getStringExtra(EXTRA_RUNELITE_CLASSPATH);
+                String clientVersion = getIntent().getStringExtra(EXTRA_RUNELITE_VERSION);
+                if (clientClasspath != null) {
+                    for (String entry : clientClasspath.split(File.pathSeparator)) {
+                        if (!new File(entry).isFile()) {
+                            Log.w("JavaGUILauncher", "Downloaded RuneLite is incomplete (" + entry + "), using the bundled client");
+                            clientClasspath = null;
+                            clientVersion = null;
+                            break;
+                        }
+                    }
+                }
+                if(clientClasspath == null && !jar.isFile()) {
                     finalErrorDialog(getString(R.string.runelite_not_installed, jar.getAbsolutePath()));
                     return;
                 }
@@ -352,16 +368,28 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 }
                 // Keep RuneLite's ~/.runelite inside its own instance directory
                 args.add("-Duser.home=" + Tools.getRuneLiteDir().getAbsolutePath());
+                String clientJars = clientClasspath != null ? clientClasspath : jar.getAbsolutePath();
+                if (clientClasspath != null) {
+                    java.util.ArrayList<String> extraArgs = getIntent().getStringArrayListExtra(EXTRA_RUNELITE_JVM_ARGS);
+                    if (extraArgs != null) args.addAll(extraArgs);
+                }
+                if (clientVersion != null) {
+                    // The shim writes this once RuneLite's window is up, so the launcher knows the
+                    // version works (a downloaded version that never gets there is rolled back).
+                    args.add("-Drunelite.android.okFile=" + net.kdt.pojavlaunch.runeliteupdate.RuneLiteUpdates.okFile(this, clientVersion).getAbsolutePath());
+                }
+                Log.i("JavaGUILauncher", "Starting RuneLite " + (clientVersion != null ? clientVersion : "(bundled)")
+                        + (clientClasspath != null ? " from the official release" : " from the bundled runelite.jar"));
                 args.add("-cp");
                 // runelite-android.jar must come first: it overrides JagexAuthService and its
                 // entry point makes the client frame fill the caciocavallo virtual screen.
                 File androidJar = Tools.getRuneLiteAndroidJar();
                 if (androidJar.isFile()) {
-                    args.add(androidJar.getAbsolutePath() + File.pathSeparator + jar.getAbsolutePath());
+                    args.add(androidJar.getAbsolutePath() + File.pathSeparator + clientJars);
                     args.add("net.kdt.pojavlaunch.runelite.AndroidRuneLite");
                 } else {
                     Log.w("JavaGUILauncher", "runelite-android.jar missing, starting RuneLite without Android fixes");
-                    args.add(jar.getAbsolutePath());
+                    args.add(clientJars);
                     args.add("net.runelite.client.RuneLite");
                 }
                 args.add("--developer-mode");

@@ -639,5 +639,6 @@
 
     <string name="runelite_not_installed">The RuneLite client is missing:\n%s</string>
     <string name="runelite_requires_java">RuneLite needs a Java 17 runtime (the AWT host does not support other versions). Install one in the launcher settings, then try again.</string>
+    <string name="runelite_client_button">RuneLite version &amp; updates</string>
     <string name="runelite_no_runtime">Failed to install a Java 17 runtime for RuneLite.</string>
 </resources>

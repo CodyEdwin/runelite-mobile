@@ -840,11 +840,25 @@ public final class Tools {
     public static void startRuneLite(final Activity activity, String runeLiteProfile) throws Throwable {
         ensureRuneLiteInstalled(activity);
         String runtimeName = getRuneLiteRuntimeName(activity);
+        // Official RuneLite release from bootstrap.json (downloaded/verified here), or the bundled jar.
+        net.kdt.pojavlaunch.runeliteupdate.RuneLiteBootstrap.LaunchPlan plan =
+                net.kdt.pojavlaunch.runeliteupdate.RuneLiteUpdates.prepareLaunch(activity);
 
         Intent intent = new Intent(activity, JavaGUILauncherActivity.class);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE, true);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNTIME, runtimeName);
         if (runeLiteProfile != null) intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_PROFILE, runeLiteProfile);
+        intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_VERSION, plan.version);
+        if (!plan.isBundled()) {
+            StringBuilder classpath = new StringBuilder();
+            for (File file : plan.classpath) {
+                if (classpath.length() > 0) classpath.append(File.pathSeparator);
+                classpath.append(file.getAbsolutePath());
+            }
+            intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_CLASSPATH, classpath.toString());
+            intent.putStringArrayListExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_JVM_ARGS,
+                    new ArrayList<>(plan.manifest.jvmArgs));
+        }
         activity.startActivity(intent);
     }
 
