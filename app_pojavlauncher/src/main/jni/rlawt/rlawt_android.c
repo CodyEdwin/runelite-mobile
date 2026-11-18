@@ -114,9 +114,67 @@ static void w_glShaderSource(GLuint sh, GLsizei count, const GLchar *const *str,
     free(buf);
 }
 
+// MobileGlues implements GL 3.0/3.1 buffer copies and range mapping (core in GLES 3) but doesn't
+// list GL_ARB_copy_buffer / GL_ARB_map_buffer_range, so LWJGL reports them missing and 117 HD
+// copies buffers by glMapBuffer(GL_READ_ONLY), which MobileGlues can't map ("Failed to map copy
+// source buffer"). Advertise them (only if absent) through the GL3 extension queries.
+static const char *extraExt[] = { "GL_ARB_copy_buffer", "GL_ARB_map_buffer_range" };
+#define NEXTRA (sizeof extraExt / sizeof extraExt[0])
+typedef const GLubyte *(*getstringi_t)(GLenum, GLuint);
+typedef void (*getintegerv_t)(GLenum, GLint *);
+typedef const GLubyte *(*getstring_t)(GLenum);
+static getstringi_t p_glGetStringi; static getintegerv_t r_glGetIntegerv; static getstring_t r_glGetString;
+static int extBase = -1, extMissing; static const char *missing[NEXTRA]; static char *extStr;
+static void extInit(void) {
+    if (extBase >= 0 || !r_glGetIntegerv || !p_glGetStringi) return;
+    GLint n = 0; r_glGetIntegerv(0x821D /*GL_NUM_EXTENSIONS*/, &n);
+    if (n <= 0) return; // no context yet
+    extBase = n; extMissing = 0;
+    for (size_t e = 0; e < NEXTRA; e++) {
+        int found = 0;
+        for (GLint i = 0; i < n && !found; i++) { const GLubyte *x = p_glGetStringi(GL_EXTENSIONS, (GLuint) i); found = x && !strcmp((const char *) x, extraExt[e]); }
+        if (!found) missing[extMissing++] = extraExt[e];
+    }
+    LOG("advertising %d extra GL extensions", extMissing);
+}
+static void w_glGetIntegerv(GLenum pname, GLint *v) {
+    r_glGetIntegerv(pname, v);
+    if (pname == 0x821D && v) { extInit(); if (extBase >= 0) *v = extBase + extMissing; }
+}
+static const GLubyte *w_glGetStringi(GLenum name, GLuint i) {
+    if (name == GL_EXTENSIONS) { extInit(); if (extBase >= 0 && (int) i >= extBase && (int) i < extBase + extMissing) return (const GLubyte *) missing[i - extBase]; }
+    return p_glGetStringi(name, i);
+}
+static const GLubyte *w_glGetString(GLenum name) {
+    const GLubyte *r = r_glGetString(name);
+    if (name != GL_EXTENSIONS || !r) return r;
+    extInit();
+    if (extBase < 0 || !extMissing) return r;
+    if (!extStr) {
+        size_t l = strlen((const char *) r) + 1;
+        for (int i = 0; i < extMissing; i++) l += strlen(missing[i]) + 1;
+        extStr = malloc(l);
+        if (!extStr) return r;
+        strcpy(extStr, (const char *) r);
+        for (int i = 0; i < extMissing; i++) { strcat(extStr, " "); strcat(extStr, missing[i]); }
+    }
+    return (const GLubyte *) extStr;
+}
+static void *mgproc(const char *n) {
+    void *f = p_glXGetProcAddress((const GLubyte *) n);
+    return f ? f : dlsym(mg, n);
+}
+
 static void *resolve(const GLubyte *name) {
     if (!name) return NULL;
     const char *n = (const char *) name;
+    if (!strcmp(n, "glGetIntegerv") || !strcmp(n, "glGetStringi") || !strcmp(n, "glGetString")) {
+        if (!r_glGetIntegerv) r_glGetIntegerv = (getintegerv_t) mgproc("glGetIntegerv");
+        if (!p_glGetStringi) p_glGetStringi = (getstringi_t) mgproc("glGetStringi");
+        if (!r_glGetString) r_glGetString = (getstring_t) mgproc("glGetString");
+        if (r_glGetIntegerv && p_glGetStringi && r_glGetString)
+            return !strcmp(n, "glGetIntegerv") ? (void *) w_glGetIntegerv : !strcmp(n, "glGetStringi") ? (void *) w_glGetStringi : (void *) w_glGetString;
+    }
     if (!strcmp(n, "glShaderSource") || !strcmp(n, "glShaderSourceARB")) {
         if (!p_glShaderSource) {
             p_glShaderSource = (shsrc_t) p_glXGetProcAddress((const GLubyte *) "glShaderSource");
