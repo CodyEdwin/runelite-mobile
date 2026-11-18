@@ -182,7 +182,19 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         s.setPadding(dp(16), 0, dp(16), 0);
         s.setBackground(panel(PANEL));
         s.setChecked(prefs.getBoolean(key, def));
-        s.setOnCheckedChangeListener((b, checked) -> prefs.edit().putBoolean(key, checked).apply());
+        s.setOnCheckedChangeListener((b, checked) -> {
+            // commit() so the value is on disk before PLAY starts the RuneLite process, which
+            // reads it from disk; then verify it stuck.
+            boolean ok = prefs.edit().putBoolean(key, checked).commit();
+            boolean stored = prefs.getBoolean(key, def);
+            if (!ok || stored != checked) {
+                String reason = "Setting '" + text + "' did not save (commit=" + ok + ", stored=" + stored + ")";
+                android.util.Log.w("RuneLiteMobile", reason);
+                Toast.makeText(this, reason, Toast.LENGTH_LONG).show();
+            } else {
+                android.util.Log.i("RuneLiteMobile", key + " = " + checked);
+            }
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
         lp.bottomMargin = dp(8);
         s.setLayoutParams(lp);

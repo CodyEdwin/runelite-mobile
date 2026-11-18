@@ -90,7 +90,9 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        if (getSurfaceTexture() != null) getSurfaceTexture().setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
         updateFitTransform(w, h);
+        sForceFrame = true;
     }
 
     /**
@@ -143,6 +145,13 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     public void onSurfaceTextureAvailable(SurfaceTexture texture, int w, int h) {
         texture.setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
         updateFitTransform(getWidth(), getHeight());
+        // On return from another app the view may still be mid-layout; refit once it settles.
+        post(() -> {
+            if (getSurfaceTexture() != null) getSurfaceTexture().setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
+            updateFitTransform(getWidth(), getHeight());
+            sForceFrame = true;
+        });
+        sForceFrame = true;
         mIsDestroyed = false;
         new Thread(this, "AndroidAWTRenderer").start();
     }
@@ -155,7 +164,12 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
 
     @Override
     public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int w, int h) {
-        // Keep the virtual AWT buffer size independent of the Android view size.
+        // TextureView resets the buffer to the view size whenever it is re-laid out (e.g. the
+        // system bars appearing while switching apps). Our frames are canvas-sized, so the game then
+        // filled only a corner of the buffer and stayed small. Re-apply our size and the fit.
+        texture.setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
+        updateFitTransform(getWidth(), getHeight());
+        sForceFrame = true;
     }
 
     @Override
@@ -165,6 +179,8 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
 
     /** Fast path (cacio17 / RuneLite): native copy into the bitmap, only when the screen changed. */
     private static volatile boolean sFastBlit;
+    /** Set when the surface was (re)created or resized: post a full frame even if nothing changed. */
+    private static volatile boolean sForceFrame;
 
     public static void setFastBlitEnabled(boolean enabled) {
         sFastBlit = enabled;
@@ -183,6 +199,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         try {
             while (!mIsDestroyed && surface.isValid()) {
                 polls++;
+                if (sForceFrame) { sForceFrame = false; force = true; }
                 int r = JREUtils.renderAWTScreenFrameToBitmap(bitmap, force);
                 if (r < 0) {
                     // Screen size changed (finalised from the laid-out view after this thread started).
