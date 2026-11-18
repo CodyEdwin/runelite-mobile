@@ -28,7 +28,7 @@ public final class AWTContext {
             throw new UnsatisfiedLinkError("GPU mode is off (enable 'GPU mode (experimental)' in the launcher)");
         }
         System.load(System.getProperty("runelite.android.nativeDir") + "/librlawt_android.so");
-        String mg = System.getProperty("org.lwjgl.opengl.libname");
+        String mg = System.getProperty("runelite.android.mgLib");
         if (!nInit(mg)) throw new UnsatisfiedLinkError("could not load " + mg);
         nativesLoaded = true;
     }
@@ -77,14 +77,15 @@ public final class AWTContext {
     }
 
     public void swapBuffers() {
-        int need = Math.max(1, component.getWidth()) * Math.max(1, component.getHeight());
-        if (pixels.length < need) pixels = new int[need];
-        if (nSwap(pixels, wh) == 0) return;
-        int w = wh[0], h = wh[1];
-        if (image == null || image.getWidth() != w || image.getHeight() != h) {
-            image = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        // The native side writes the previous frame straight into the image's pixel array (the
+        // frame size only changes on resize, when one frame is skipped to reallocate).
+        int cw = Math.max(1, component.getWidth()), ch = Math.max(1, component.getHeight());
+        if (image == null || image.getWidth() != cw || image.getHeight() != ch) {
+            image = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB);
+            pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
         }
-        System.arraycopy(pixels, 0, ((DataBufferInt) image.getRaster().getDataBuffer()).getData(), 0, w * h);
+        if (nSwap(pixels, wh) == 0 || wh[0] != cw || wh[1] != ch) return;
+        int w = wh[0], h = wh[1];
         Graphics g = component.getGraphics();
         if (g != null) {
             try {

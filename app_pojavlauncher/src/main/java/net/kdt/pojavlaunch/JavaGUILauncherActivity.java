@@ -399,7 +399,9 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     args.add("-Drunelite.android.gpu=true");
                     args.add("-Drunelite.android.nativeDir=" + nativeDir);
                     args.add("-Dorg.lwjgl.librarypath=" + nativeDir);
-                    args.add("-Dorg.lwjgl.opengl.libname=" + nativeDir + "/libmobileglues.so");
+                    // LWJGL's "libGL" is our wrapper: it forwards to MobileGlues and fixes GLES quirks.
+                    args.add("-Dorg.lwjgl.opengl.libname=" + nativeDir + "/librlawt_android.so");
+                    args.add("-Drunelite.android.mgLib=" + nativeDir + "/libmobileglues.so");
                     JREUtils.gpuMode = true;
                     // RuneLite's jar carries glibc builds of liblwjgl(_opengl).so that LWJGL extracts
                     // before looking at org.lwjgl.librarypath. A classpath directory ahead of it with

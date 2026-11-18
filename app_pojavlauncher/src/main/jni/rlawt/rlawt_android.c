@@ -34,8 +34,38 @@ F(void, glGenBuffers, (GLsizei, GLuint*)) F(void, glBindBuffer, (GLenum, GLuint)
 F(void, glBufferData, (GLenum, GLsizeiptr, const void*, GLenum))
 F(void*, glMapBufferRange, (GLenum, GLintptr, GLsizeiptr, GLbitfield)) F(GLboolean, glUnmapBuffer, (GLenum))
 F(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*)) F(void, glFlush, (void))
+F(void, glRenderbufferStorageMultisample, (GLenum, GLsizei, GLenum, GLsizei, GLsizei))
+F(void*, glXGetProcAddress, (const GLubyte*))
 #undef F
 #define L(name) if (!(p_##name = dlsym(mg, #name))) { LOG("missing %s", #name); return JNI_FALSE; }
+
+// LWJGL loads this library as its "libGL" (org.lwjgl.opengl.libname) and resolves every GL
+// function through glXGetProcAddress below, which forwards to MobileGlues except for calls that
+// need fixing up for GLES. GLES only accepts sized internal formats for renderbuffers, but the GPU
+// plugin allocates its MSAA scene buffer as GL_RGBA, which made the FBO incomplete (0x8CD6) and
+// crashed the client when the first scene was drawn.
+static GLenum sizedFormat(GLenum f) {
+    switch (f) {
+        case GL_RGBA: return GL_RGBA8;
+        case GL_RGB: return GL_RGB8;
+        case GL_DEPTH_COMPONENT: return GL_DEPTH_COMPONENT24;
+        case GL_DEPTH_STENCIL: return GL_DEPTH24_STENCIL8;
+        default: return f;
+    }
+}
+static void w_glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { p_glRenderbufferStorage(t, sizedFormat(f), w, h); }
+static void w_glRenderbufferStorageMultisample(GLenum t, GLsizei s, GLenum f, GLsizei w, GLsizei h) {
+    p_glRenderbufferStorageMultisample(t, s, sizedFormat(f), w, h);
+}
+__attribute__((visibility("default"))) void *glXGetProcAddress(const GLubyte *name) {
+    if (!mg) return NULL;
+    const char *n = (const char *) name;
+    if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
+    if (!strcmp(n, "glRenderbufferStorageMultisample")) return (void *) w_glRenderbufferStorageMultisample;
+    void *f = p_glXGetProcAddress(name);
+    return f ? f : dlsym(mg, n);
+}
+__attribute__((visibility("default"))) void *glXGetProcAddressARB(const GLubyte *name) { return glXGetProcAddress(name); }
 
 #define JF(name) Java_net_runelite_rlawt_AWTContext_##name
 
@@ -52,6 +82,7 @@ JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     L(glBindRenderbuffer) L(glRenderbufferStorage) L(glFramebufferRenderbuffer) L(glCheckFramebufferStatus)
     L(glDeleteFramebuffers) L(glDeleteRenderbuffers) L(glGenBuffers) L(glBindBuffer) L(glBufferData)
     L(glMapBufferRange) L(glUnmapBuffer) L(glReadPixels) L(glFlush)
+    L(glRenderbufferStorageMultisample) L(glXGetProcAddress)
     return JNI_TRUE;
 }
 
