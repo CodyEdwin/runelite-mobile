@@ -84,16 +84,8 @@ public class AsyncAssetManager {
             try {
                 unpackComponent(ctx, "caciocavallo", false);
                 unpackComponent(ctx, "caciocavallo17", false);
-                // Since the Java module system doesn't allow multiple JARs to declare the same module,
-                // we repack them to a single file here
-                unpackLwjglNatives(ctx);
-                unpackComponent(ctx, "lwjgl3/3.3.3", false);
-                unpackComponent(ctx, "lwjgl3/3.4.1", false);
+                // RuneLite Mobile: no LWJGL / Minecraft agents and installers any more.
                 unpackComponent(ctx, "security", true);
-                unpackComponent(ctx, "arc_dns_injector", true);
-                unpackComponent(ctx, "authlib_injector", true);
-                unpackComponent(ctx, "methods_injector_agent", true);
-                unpackComponent(ctx, "forge_installer", true);
                 unpackComponent(ctx, "runelite", false);
             } catch (IOException e) {
                 Log.e("AsyncAssetManager", "Failed to unpack components !",e );

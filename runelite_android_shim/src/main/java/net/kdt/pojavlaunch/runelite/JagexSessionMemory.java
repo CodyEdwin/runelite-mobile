@@ -39,8 +39,47 @@ public final class JagexSessionMemory {
         }
     }
 
+    private static boolean sCharacterPassed;
+
+    /**
+     * No remembered character yet (first start of RuneLite Mobile, or the user picked one before
+     * this existed): if the saved Jagex accounts contain exactly one character, use it.
+     */
+    static void autoSelectSingleCharacter() {
+        if (sCharacterPassed) return;
+        try {
+            net.runelite.client.rs.auth.JagexAuthService service = net.runelite.client.RuneLite.getInjector()
+                    .getInstance(net.runelite.client.rs.auth.JagexAuthService.class);
+            service.loadFromStore().thenRun(() -> {
+                String sessionId = null;
+                net.runelite.client.rs.auth.Account only = null;
+                int count = 0;
+                for (net.runelite.client.rs.auth.Session session : service.getSessions()) {
+                    net.runelite.client.rs.auth.Account[] accounts = service.getAccounts(session.getSessionId());
+                    if (accounts == null) continue;
+                    for (net.runelite.client.rs.auth.Account account : accounts) {
+                        count++;
+                        only = account;
+                        sessionId = session.getSessionId();
+                    }
+                }
+                if (count == 1 && only.getDisplayName() != null) {
+                    System.out.println("JagexSessionMemory: one saved Jagex character, selecting it");
+                    service.switchJagexAccount(sessionId, Long.toString(only.getAccountId()), only.getDisplayName());
+                } else {
+                    System.out.println("JagexSessionMemory: " + count + " saved Jagex characters, pick one in the Jagex Accounts panel");
+                }
+            });
+        } catch (Throwable t) {
+            System.err.println("JagexSessionMemory: " + t);
+        }
+    }
+
     static String[] addSavedCharacter(String[] args) {
-        if (Arrays.asList(args).contains("--character")) return args;
+        if (Arrays.asList(args).contains("--character")) {
+            sCharacterPassed = true;
+            return args;
+        }
         try {
             File f = file();
             if (!f.isFile()) return args;
@@ -49,6 +88,7 @@ public final class JagexSessionMemory {
             List<String> list = new ArrayList<>(Arrays.asList(args));
             list.add("--character");
             list.add(name);
+            sCharacterPassed = true;
             System.out.println("JagexSessionMemory: reusing saved Jagex session for the last character");
             return list.toArray(new String[0]);
         } catch (Exception e) {

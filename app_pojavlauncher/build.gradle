@@ -226,7 +226,9 @@ android {
 
 afterEvaluate {
     // Explicit dependencies for which the apk relies on
-    def jarDeps = [":forge_installer:jar", ":arc_dns_injector:jar", ":methods_injector_agent:jar", ":jre_lwjgl3glfw:jar"]
+    // RuneLite Mobile: the Minecraft-only helper jars (forge_installer, arc_dns_injector,
+    // methods_injector_agent, LWJGL) are no longer bundled.
+    def jarDeps = []
     tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
         dependsOn(jarDeps)
     }

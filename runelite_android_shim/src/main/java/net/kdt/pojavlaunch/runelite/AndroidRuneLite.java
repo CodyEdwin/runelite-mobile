@@ -30,11 +30,13 @@ public final class AndroidRuneLite {
         // and only repaints damaged areas; on the cacio screen that lost sidebar/panel contents.
         if (System.getProperty("swing.bufferPerWindow") == null) System.setProperty("swing.bufferPerWindow", "false");
         javax.swing.SwingUtilities.invokeAndWait(LockingRepaintManager::install);
+        PaintEventGuard.install();
         WindowFitter.install();
         RepaintPump.install();
         InputFocus.install();
         javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
 
+        net.runelite.client.rs.auth.AndroidSessionKeyMigration.migrate(new java.io.File(System.getProperty("user.home")));
         args = JagexSessionMemory.addSavedCharacter(args);
         Method main = Class.forName("net.runelite.client.RuneLite").getMethod("main", String[].class);
         try {
@@ -43,5 +45,6 @@ public final class AndroidRuneLite {
             throw e.getCause();
         }
         LaunchConfirm.start();
+        JagexSessionMemory.autoSelectSingleCharacter();
     }
 }

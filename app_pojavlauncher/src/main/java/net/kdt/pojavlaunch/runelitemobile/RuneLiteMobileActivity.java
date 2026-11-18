@@ -82,7 +82,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         left.setOrientation(LinearLayout.VERTICAL);
         left.setGravity(Gravity.CENTER_HORIZONTAL);
         android.widget.ImageView logo = new android.widget.ImageView(this);
-        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setImageResource(R.drawable.runelite_mobile_logo);
         left.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
         TextView title = new TextView(this);
         title.setText(R.string.app_name);
