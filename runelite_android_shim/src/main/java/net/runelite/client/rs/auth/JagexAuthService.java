@@ -175,7 +175,7 @@ public class JagexAuthService {
       }
       String secret = secretBuilder.toString();
 
-      try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+      try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
          server.setSoTimeout(ANDROID_AUTH_TIMEOUT_MS);
          URI uri = URI.create(ANDROID_AUTH_SCHEME + "://login?port=" + server.getLocalPort() + "&secret=" + secret);
          if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {

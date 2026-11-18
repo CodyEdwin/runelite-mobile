@@ -27,6 +27,7 @@ public final class AndroidRuneLite {
     public static void main(String[] args) throws Throwable {
         System.setProperty(ANDROID_PROPERTY, "true");
         WindowFitter.install();
+        RepaintPump.install();
 
         Method main = Class.forName("net.runelite.client.RuneLite").getMethod("main", String[].class);
         try {

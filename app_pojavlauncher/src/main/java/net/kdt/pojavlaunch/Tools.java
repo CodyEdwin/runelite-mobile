@@ -668,7 +668,12 @@ public final class Tools {
             }
         }
 
-        if (!jarMissing && RUNELITE_JAR_REVISION.equals(installedRevision)) return;
+        if (!jarMissing && RUNELITE_JAR_REVISION.equals(installedRevision)) {
+            // The Android shim is tiny and changes more often than the client: always refresh it.
+            copyAssetFile(context, "components/runelite/runelite-android.jar",
+                    runeLiteDir.getAbsolutePath(), true);
+            return;
+        }
 
         FileUtils.ensureDirectory(runeLiteDir);
         if (jarMissing) {

@@ -83,6 +83,31 @@
             android:name=".FatalErrorActivity"
             android:configChanges="keyboardHidden|orientation|screenSize|keyboard|navigation"
             android:theme="@style/Theme.AppCompat.DayNight.Dialog" />
+        <activity
+            android:name=".JagexAuthCallbackActivity"
+            android:process=":jagexauth"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="jagex" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="localhost" />
+            </intent-filter>
+            <intent-filter android:label="RuneLite Jagex login">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
         <activity android:name=".ShowErrorActivity"
             android:configChanges="keyboardHidden|orientation|screenSize|keyboard|navigation"
             android:theme="@style/Theme.AppCompat.DayNight.Dialog" />
@@ -95,7 +120,10 @@
             android:process=":jagexauth"
             android:exported="false"
             android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|keyboard|navigation|uiMode"
-            android:theme="@style/Theme.AppCompat.DayNight" />
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.AppCompat.DayNight.Dialog" />
         <activity
             android:process=":gui_installer"
             android:name=".JavaGUILauncherActivity"
@@ -132,6 +160,12 @@
 
         <service android:name=".services.ProgressService"
             android:foregroundServiceType="dataSync"/>
+        <service android:name=".services.RuneLiteService" android:process=":gui_installer"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the RuneLite Java process alive while the Jagex login runs in the browser or the app is in the background."/>
+        </service>
         <service android:name=".services.GameService" android:process=":game"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
@@ -140,5 +174,11 @@
     </application>
     <queries>
         <package android:name="net.kdt.pojavlaunch.ffmpeg"/>
+        <package android:name="com.android.chrome"/>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
     </queries>
 </manifest>

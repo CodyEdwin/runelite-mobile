@@ -96,6 +96,14 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         // Read the launch mode before inflating the layout: AWTCanvasView uses a static
         // virtual screen size which must match -Dcacio.managed.screensize later on.
         sRunningInstance = new WeakReference<>(this);
+        // Keep this process (the RuneLite JVM) alive while Chrome is in front for the Jagex login.
+        try {
+            android.content.Intent service = new android.content.Intent(this, net.kdt.pojavlaunch.services.RuneLiteService.class);
+            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+            else startService(service);
+        } catch (Exception e) {
+            android.util.Log.w("JavaGUILauncher", "Unable to start the RuneLite foreground service", e);
+        }
         mRuneLite = getIntent().getBooleanExtra(EXTRA_RUNELITE, false);
         mRequestedRuntime = getIntent().getStringExtra(EXTRA_RUNTIME);
         AWTCanvasView.setFpsOverlayEnabled(!mRuneLite);
@@ -108,6 +116,14 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             AWTCanvasView.resetCanvasSize();
         }
 
+        if (mRuneLite && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            // Draw under the camera cutout too, so the view matches the display size the AWT
+            // virtual screen was computed from (otherwise it is letterboxed by the cutout inset).
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
         setContentView(R.layout.activity_java_gui_launcher);
 
         try {
@@ -404,9 +420,41 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     @Override
     public void onResume() {
         super.onResume();
-        final int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
+        final int uiOptions = mRuneLite
+                ? View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                : View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
         final View decorView = getWindow().getDecorView();
         decorView.setSystemUiVisibility(uiOptions);
+        if (mRuneLite && android.os.Build.VERSION.SDK_INT >= 30) {
+            // Lay out edge-to-edge permanently: when the Jagex login popup / Chrome brought the
+            // system bars back, the view shrank and the whole RuneLite screen was re-fitted smaller.
+            getWindow().setDecorFitsSystemWindows(false);
+            android.view.WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.hide(android.view.WindowInsets.Type.systemBars());
+                controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Re-enter immersive mode after a popup (Jagex login, Chrome, keyboard) took focus.
+        if (hasFocus && mRuneLite) onResume_immersive();
+    }
+
+    private void onResume_immersive() {
+        final View decorView = getWindow().getDecorView();
+        decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) controller.hide(android.view.WindowInsets.Type.systemBars());
+        }
     }
 
 
