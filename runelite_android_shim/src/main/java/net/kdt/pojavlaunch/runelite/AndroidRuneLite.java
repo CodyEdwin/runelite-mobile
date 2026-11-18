@@ -33,6 +33,7 @@ public final class AndroidRuneLite {
         WindowFitter.install();
         RepaintPump.install();
         InputFocus.install();
+        javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
 
         Method main = Class.forName("net.runelite.client.RuneLite").getMethod("main", String[].class);
         try {

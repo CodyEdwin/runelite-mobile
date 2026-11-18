@@ -343,6 +343,11 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 // RuneLite only enables developer mode for development runs with assertions.
                 args.add("-ea");
                 args.add("-Djava.awt.headless=false");
+                // Read from disk: this activity runs in its own process (:gui_installer).
+                if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+                        net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false)) {
+                    args.add("-Drunelite.android.performanceMode=true");
+                }
                 // Keep RuneLite's ~/.runelite inside its own instance directory
                 args.add("-Duser.home=" + Tools.getRuneLiteDir().getAbsolutePath());
                 args.add("-cp");

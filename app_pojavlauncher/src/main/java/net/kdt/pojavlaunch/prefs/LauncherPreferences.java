@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 public class LauncherPreferences {
     public static final String PREF_KEY_CURRENT_PROFILE = "currentProfile";
     public static final String PREF_KEY_SKIP_NOTIFICATION_CHECK = "skipNotificationPermissionCheck";
+    /** Opt-in RuneLite performance mode (Stretched Mode for the session: lower resolution, higher FPS). */
+    public static final String PREF_KEY_RUNELITE_PERFORMANCE = "runelitePerformanceMode";
 
     public static SharedPreferences DEFAULT_PREF;
 

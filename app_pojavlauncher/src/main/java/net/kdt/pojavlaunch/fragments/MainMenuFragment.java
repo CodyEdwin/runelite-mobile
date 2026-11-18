@@ -81,6 +81,13 @@ public class MainMenuFragment extends Fragment {
         });
 
         mShareLogsButton.setOnClickListener((v) -> shareLog(requireContext()));
+        androidx.appcompat.widget.SwitchCompat performanceSwitch = view.findViewById(R.id.runelite_performance_switch);
+        android.content.SharedPreferences prefs = LauncherPreferences.DEFAULT_PREF;
+        if (performanceSwitch != null && prefs != null) {
+            performanceSwitch.setChecked(prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false));
+            performanceSwitch.setOnCheckedChangeListener((b, checked) ->
+                    prefs.edit().putBoolean(LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, checked).apply());
+        }
 
         mOpenDirectoryButton.setOnClickListener((v)-> openPath(v.getContext(), getCurrentProfileDirectory(), false));
     }
