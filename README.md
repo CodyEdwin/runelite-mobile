@@ -1,263 +1,34 @@
-<p align="center">
-  <img src="ic_launcher.webp" width="128" height="128" alt="XDAetherium app icon">
-</p>
+<p align="center"><img src="docs/runelite_mobile_icon.png" width="128" alt="RuneLite Mobile icon"></p>
 
-# XDAetherium Android
+# RuneLite Mobile
 
-<p align="center">
-  <a href="README.md">English</a> | <a href="README_RU.md">Русский</a>
-</p>
+A standalone Android app that runs the [RuneLite](https://runelite.net) Old School RuneScape client
+on phones and tablets. Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
 
-**XDAetherium** is an Android launcher for running **Minecraft: Java Edition** on phones and tablets. It is based on Amethyst/PojavLauncher/Boardwalk and includes custom changes for a smaller APK, Ely.by accounts, working Ely.by skins, custom branding, and Android Java runtime fixes.
+Not affiliated with Jagex or the RuneLite project. RuneScape is a trademark of Jagex Ltd.
 
-> This project is not affiliated with Mojang, Microsoft, or Ely.by. Use your own account and follow the rules of the corresponding services.
+## How it works
+- A Java 17 runtime (downloaded on first start) runs the desktop RuneLite client.
+- Caciocavallo renders AWT/Swing into an off-screen buffer that a native blitter copies into an
+  Android `TextureView`; touch, mouse, keyboard and gamepad-less input is bridged back into AWT.
+- `runelite_android_shim/` (put in front of RuneLite on the classpath) fits the window to the
+  screen, fixes repaints/flicker, focus and popups, runs the Jagex login in an Android
+  browser tab and keeps the Jagex session across restarts.
 
-## Features
+## Start screen
+- RuneLite profile picker and **PLAY**
+- **Performance mode** (off by default): renders the game at a lower resolution through
+  RuneLite's Stretched Mode for this session only (higher FPS, softer picture)
+- **Load sideloaded plugins** (on by default): the bundled plugin jars plus any jars in
+  `files/runelite/sideloaded-plugins` are loaded (RuneLite runs in developer mode)
+- Import plugin (.jar), Open game directory, RuneLite version & updates, Settings (memory)
 
-- Run Minecraft: Java Edition on Android.
-- Microsoft account support from the upstream launcher.
-- Offline/local account support.
-- **Ely.by Account** support:
-  - login by username/e-mail and password;
-  - 2FA code support;
-  - token refresh;
-  - registration through `account.ely.by`;
-  - Ely.by skins in-game through `authlib-injector`;
-  - Ely.by skin head in the main menu.
-- Forge/Fabric/OptiFine and vanilla Minecraft support.
-- **Aesthetic Preferences & Studio Navigation**:
-  - Fully redesigned preference categories with custom titles and summaries that make accessing advanced styling and cursor customization natural and intuitive.
-
-  <p align="center">
-    <img src="docs/настройки_англ.jpg" width="600" alt="Launcher Settings Screen">
-  </p>
-
-- **Redesigned Mod Loader Installer**:
-  - Modern card-based interface replacing basic legacy checkboxes.
-  - Version filtering tailored to the selected loader type.
-  - Native support for Fabric, Quilt, NeoForge, Forge, and OptiFine downloads.
-  - Removed the obsolete BTA (Better Than Adventure) loader.
-  - **BTW (Better Than Wolves)** installer is fully complete: installs Minecraft 1.5.2 with Cursed Fabric automatically, with optional survival maps (Flatcore / Adventure).
-
-  <p align="center">
-    <img src="docs/профили_англ.jpg" width="260" alt="Loader Profile Options">
-    <img src="docs/загрузчики_англ.jpg" width="260" alt="Mod Loader Selection">
-    <img src="docs/бтв_англ.jpg" width="260" alt="Better Than Wolves Installer">
-  </p>
-
-- **Custom Cursors & Built-in Pixel Editor**:
-  - **Fully Animated Cursor (`.ani`) Engine**: Native decoding of Windows animated cursor files using a custom binary RIFF ACON parser.
-  - **Real-Time Animation Pipeline**: Optimized view callback hooks that allow smooth, 60fps cursor animation in settings card previews, the touchpad test environment, and the in-game virtual mouse.
-  - **Custom Cursor Upload**: Upload and apply any custom `.png`, `.cur`, or `.ani` file directly.
-  - **Built-in Pixel Editor**:
-    - **Backdrop**: Classic Photoshop-style checkerboard pattern canvas for transparent backgrounds.
-    - **Magic Bucket (BFS Flood-Erase)**: Automatic contiguous background color eraser using Breadth-First Search with custom sensitivity threshold controls to erase colors (like converting white background pixels to alpha transparency instead of leaving black artifacts).
-    - **Manual Brush Eraser**: Precision manual pixel-erasing tool with a fully adjustable radius slider.
-    - **History Stack**: Multi-level Undo queue (up to 10 steps) allowing you to revert changes seamlessly.
-    - **Ergonomics**: Smart screen auto-rotation lock that prevents frustrating viewport changes while editing.
-
-  <p align="center">
-    <img src="docs/курсоры_англ.jpg" width="600" alt="Cursor Boutique & Editor">
-  </p>
-
-- Automatic Java runtime selection and installation before launch.
-- Fixes for legacy Java 8 / Java 17+ / Java 21 runtime handling.
-- High-speed parallel-racing fallback with caching and newest-first sorting for OptiFine versions (working instantly without any additional actions required from the user).
-- Smaller APK: only `arm64-v8a` and `armeabi-v7a`, without x86/x86_64.
-- Custom XDAetherium name, icons, and default profile icon.
-- Forced Russian language option.
-- **Advanced Custom Controls & Backgrounds**:
-  - **Color Palettes & Text Color**: Temporarily removed custom background image uploads (to be reworked). Replaced with intuitive controls for setting solid background colors and customizing interface text colors.
-  - **Custom Button Images/Textures**: Easily upload and map custom images or custom icons directly onto individual virtual buttons for a fully personalized gaming HUD.
-  - **Ergonomic Button Resizing**: Refined and simplified scaling controls to adjust button dimensions, making them significantly more comfortable and accessible for mobile screen touch layouts.
-  - **Additional Button Actions**: Built-in actions including Cancel and Exit for robust runtime controls.
-
-  <p align="center">
-    <img src="docs/кастомизация_интерфейса_английский.jpg" width="600" alt="Interface Customization">
-  </p>
-
-  <p align="center">
-    <img src="docs/скин_для_кнопок_для_всех_языков.jpg" width="280" alt="Custom Button Skins">
-    <img src="docs/настройка_размера_новая_для_всех_языков.jpg" width="220" alt="Button Dimension Tuning">
-  </p>
-
-- **Global Fixes and Profile System**:
-  - **Complete Profile Isolation (Modrinth Style)**: Every profile is now strictly stored in its own isolated directory (`profiles/Profile_Name`). Worlds, mods, and settings will never mix again!
-  - **Smart Auto-Naming**: When downloading multiple modloaders (e.g., OptiFine), the launcher automatically uses exact version names or appends unique indices to folders to prevent conflicts.
-  - **Legacy Version Crash Fixes**: The launcher now automatically resets broken string-based mouse bindings (`key.mouse.middle`) that crashed Minecraft 1.12.2 and older, which expected numerical codes (e.g., `-100`).
-  - **Corrupted Download Protection**: If an archive is partially downloaded due to network issues, the launcher detects the corrupted file, automatically deletes it, and prompts the user to retry the download instead of crashing the game.
-  - **Bugfix Integration**: Ported stability and bug fixes similar to Amethyst version 1.1.5.
-  - **Import/Export Profiles**: Easily share or back up your Minecraft profiles. Export a profile as a portable archive (includes version, modloader, and settings) and import it on any device running XDAetherium.
-
-- **Force Minecraft Language**:
-  - Override the in-game Minecraft language independently of your system locale.
-  - Full list of ~140 supported Minecraft languages with search and filtering.
-  - The launcher automatically writes the selected language to Minecraft's `options.txt` before each launch.
-
-  <p align="center">
-    <img src="docs/показать_настройку_языков_английский.jpg" width="280" alt="Language Setting">
-    <img src="docs/менять_языки_английский.jpg" width="280" alt="Language Selection">
-  </p>
-
-- **Bundled RuneLite (Old School RuneScape) client**:
-  - A ready-to-use **RuneLite** profile is created automatically and shown in the profile list; no Minecraft installation or account is needed to start it.
-  - The bundled `runelite.jar` is unpacked on first launch and runs on the caciocavallo AWT surface, so the Swing UI and software renderer work without a GL context.
-  - RuneLite data (`.runelite`, sessions, screenshots, logs) stays inside the launcher's `runelite` directory.
-  - Requires a **Java 17** runtime (the AWT bridge does not support other versions). The launcher downloads it automatically if it is missing.
-  - The GPU plugin cannot work on Android (it needs desktop OpenGL). If it is enabled, RuneLite disables it automatically and keeps using the software renderer.
-
-- Download cancellation by long-pressing the download row/progress bar.
-- Removed extra upstream wiki/Discord author links.
-
-- **Home Screen Profile Shortcuts**:
-  - Create a home screen shortcut directly from the **Profile Editor** by pressing **"Create shortcut"**.
-  - The shortcut automatically selects the profile and launches the game — no need to navigate manually.
-  - The shortcut uses the profile's current icon (including custom presets from `assets/icons/`).
-
-  <p align="center">
-    <img src="docs/создать_ярлык_англ.jpg" width="260" alt="Create Shortcut Button">
-    <img src="docs/как_выглядит_ярлык_на_рабочем_столе_для_всех_языков.jpg" width="260" alt="Shortcut on Home Screen">
-  </p>
-
-- **Custom Profile Icons**:
-  - Tap the profile icon in the **Profile Editor** to open an icon source menu.
-  - **Choose preset icon**: picks from built-in presets (`default`, `fabric`, `quilt`) **and** any custom images placed in `assets/icons/` (`.webp` / `.png`).
-  - **Choose custom image**: crop any image from your device as the profile icon.
-  - **Reset to default**: restores the default profile icon.
-  - BTW profiles automatically use the dedicated `BTW.webp` icon.
-  - Changes are only saved when you press **Save**.
-
-  <p align="center">
-    <img src="docs/кликнул_на_изменить_иконку_англ.jpg" width="260" alt="Icon Source Selection">
-    <img src="docs/свое_изображение_для_иконки_англ.jpg" width="260" alt="Custom Image Cropper">
-  </p>
-
-## Build status
-
-The current local debug build was tested on an Android 12 device:
-
-- debug package: `org.angelauramc.amethyst.debug`
-- versionName: `3.1.1`
-- debug APK size: about `82 MB`
-- ABI: `arm64-v8a`, `armeabi-v7a`
-- no x86/x86_64 libraries in the APK
-
-## Building from source
-
-### Requirements
-
-- JDK compatible with this project's Android Gradle Plugin.
-- Android SDK.
-- Android NDK `27.3.13750724` or a compatible installed NDK.
-- Internet connection for Gradle dependencies and Minecraft game files.
-
-### Windows
-
-```bat
-gradlew.bat :app_pojavlauncher:assembleDebug --console=plain
+## Building
 ```
-
-### Linux/macOS
-
-```bash
-./gradlew :app_pojavlauncher:assembleDebug --console=plain
+./gradlew :app_pojavlauncher:assembleDebug
 ```
+The shim jar is rebuilt with `runelite_android_shim/build.sh`, the patched cacio classes with
+`caciocavallo17_patches/build.sh`.
 
-The debug APK will be created at:
-
-```text
-app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk
-```
-
-Release build:
-
-```bash
-./gradlew :app_pojavlauncher:assembleRelease --console=plain
-```
-
-On Windows, use `gradlew.bat` instead of `./gradlew`.
-
-## Installing the debug APK
-
-```bash
-adb install -r app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk
-```
-
-For a specific device:
-
-```bash
-adb -s <device_id> install -r app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk
-```
-
-## Ely.by
-
-XDAetherium adds a dedicated **Ely.by Account** login method.
-
-How it works:
-
-1. The launcher authenticates through Ely.by's Yggdrasil-compatible API.
-2. The account is saved as a normal launcher Minecraft profile.
-3. For Ely.by accounts, the launcher adds `authlib-injector` as a Java agent when starting the game.
-4. Minecraft receives session/profile/textures through Ely.by, so Ely.by skins work in-game.
-5. For the main menu, the launcher separately downloads the Ely.by skin PNG, crops the face and overlay layer, and caches it as the profile head.
-
-If the menu skin does not update immediately, restart the launcher or reselect the Ely.by account.
-
-## APK optimization
-
-The build is configured for ARM devices:
-
-```gradle
-abiFilters "arm64-v8a", "armeabi-v7a"
-```
-
-This reduces APK size and removes unused x86/x86_64 libraries. If x86/x86_64 support is needed, the ABI filters and LWJGL assets must be restored separately.
-
-## Before publishing to GitHub
-
-Before publishing a public repository:
-
-- Do not publish signing credentials or keystore passwords. Keep them in environment variables, `local.properties`, or another local file ignored by Git.
-- Do not commit `local.properties`, build logs, temporary APKs, keystores, or personal files.
-- Keep the original `LICENSE` and attribution.
-- State that this project is a fork/modification of Amethyst/PojavLauncher/Boardwalk.
-- If you publish an APK release, publish the matching source code for that release.
-
-## Release signing
-
-Release signing values can be provided through environment variables or `local.properties`:
-
-```properties
-xdaetherium.release.storeFile=release.jks
-xdaetherium.release.storePassword=...
-xdaetherium.release.keyAlias=...
-xdaetherium.release.keyPassword=...
-```
-
-Equivalent environment variables:
-
-```text
-XDAETHERIUM_RELEASE_STORE_FILE
-XDAETHERIUM_RELEASE_STORE_PASSWORD
-XDAETHERIUM_RELEASE_KEY_ALIAS
-XDAETHERIUM_RELEASE_KEY_PASSWORD
-```
-
-## License
-
-The main project is distributed under **GNU LGPLv3** — see [LICENSE](LICENSE).
-
-This project also uses components under other free software licenses. In particular, the included `authlib-injector` component is distributed under **GNU AGPLv3** and is used as a separate Java agent component.
-
-## Credits
-
-This project is based on work from:
-
-- [Amethyst Android](https://github.com/AngelAuraMC/Amethyst-Android)
-- [PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher)
-- [Boardwalk](https://github.com/zhuowei/Boardwalk)
-- [authlib-injector](https://github.com/yushijinhun/authlib-injector)
-- [Ely.by](https://ely.by/) API and skin system
-- LWJGL, OpenJDK, SDL, GL4ES, MobileGlues, Mesa, and other dependencies used by the upstream project
-
-Thanks to all upstream authors and library maintainers.
+Based on PojavLauncher / Amethyst / XDAetherium (LGPL-3.0); see `LICENSE`. The original
+Minecraft launcher README is in `docs/README_XDAetherium_legacy.md`.
