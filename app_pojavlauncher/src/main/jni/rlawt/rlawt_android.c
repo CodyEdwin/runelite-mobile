@@ -58,40 +58,37 @@ static void w_glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { 
 static void w_glRenderbufferStorageMultisample(GLenum t, GLsizei s, GLenum f, GLsizei w, GLsizei h) {
     p_glRenderbufferStorageMultisample(t, s, sizedFormat(f), w, h);
 }
-// LWJGL may reach this library through a different load than the System.load()+nInit() one (seen
-// on the OnePlus Nord / Android 12: every lookup came back NULL -> "Core OpenGL functions could not
-// be found"), so never depend on nInit() having run in this instance: open MobileGlues lazily
-// (path from RLAWT_MG_LIB, set by the launcher) and fall back to a global symbol lookup.
-static void *mgHandle(void) {
-    if (!mg) {
-        const char *p = getenv("RLAWT_MG_LIB");
-        mg = dlopen(p && *p ? p : "libmobileglues.so", RTLD_NOW | RTLD_GLOBAL);
-        LOG("glXGetProcAddress: lazy MobileGlues open %s -> %p", p ? p : "libmobileglues.so", mg);
-        fprintf(stderr, "rlawt: lazy MobileGlues open -> %p\n", mg);
-    }
-    if (mg && !p_glXGetProcAddress) p_glXGetProcAddress = dlsym(mg, "glXGetProcAddress");
-    return mg;
-}
+// On some devices (OnePlus Nord, Android 12) LWJGL's dlopen of this library lands in a different
+// linker namespace than AWTContext's System.load(), so it gets a second copy with no nInit() state.
+// Opening MobileGlues from that copy loads a second, uninitialised MobileGlues as well (crashed in
+// strlen right after). Instead, the initialised copy publishes its resolver through the
+// process-wide environment and any other copy forwards every lookup to it, so all GL calls go to
+// the one MobileGlues that owns the context.
+typedef void *(*resolver_t)(const GLubyte *);
+static void *resolve(const GLubyte *name);
 static int misses;
+static resolver_t shared(void) {
+    static resolver_t r;
+    if (!r) { const char *e = getenv("RLAWT_RESOLVER"); if (e && *e) r = (resolver_t) (uintptr_t) strtoull(e, NULL, 16); }
+    return r;
+}
 __attribute__((visibility("default"))) void *glXGetProcAddress(const GLubyte *name) {
-    const char *n = (const char *) name;
-    if (!strcmp(n, "glRenderbufferStorage") || !strcmp(n, "glRenderbufferStorageMultisample")) {
-        // wrappers call through p_*: make sure they're resolved in this instance too
-        if (!p_glRenderbufferStorage && mgHandle()) {
-            p_glRenderbufferStorage = dlsym(mg, "glRenderbufferStorage");
-            p_glRenderbufferStorageMultisample = dlsym(mg, "glRenderbufferStorageMultisample");
-        }
-        if (p_glRenderbufferStorage) return !strcmp(n, "glRenderbufferStorage") ? (void *) w_glRenderbufferStorage : (void *) w_glRenderbufferStorageMultisample;
-    }
-    void *h = mgHandle(), *f = NULL;
-    if (h && p_glXGetProcAddress) f = p_glXGetProcAddress(name);
-    if (!f && h) f = dlsym(h, n);
-    if (!f) f = dlsym(RTLD_DEFAULT, n);
+    if (mg) return resolve(name);
+    resolver_t r = shared();
+    void *f = r ? r(name) : NULL;
     if (!f && misses++ < 8) {
-        LOG("glXGetProcAddress(%s) = NULL (mg=%p)", n, mg);
-        fprintf(stderr, "rlawt: glXGetProcAddress(%s) = NULL (mg=%p)\n", n, mg);
+        LOG("glXGetProcAddress(%s) = NULL (no initialised rlawt, resolver=%p)", name ? (const char *) name : "(null)", (void *) r);
+        fprintf(stderr, "rlawt: glXGetProcAddress(%s) = NULL (no initialised rlawt, resolver=%p)\n", name ? (const char *) name : "(null)", (void *) r);
     }
     return f;
+}
+static void *resolve(const GLubyte *name) {
+    if (!name) return NULL;
+    const char *n = (const char *) name;
+    if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
+    if (!strcmp(n, "glRenderbufferStorageMultisample")) return (void *) w_glRenderbufferStorageMultisample;
+    void *f = p_glXGetProcAddress(name);
+    return f ? f : dlsym(mg, n);
 }
 __attribute__((visibility("default"))) void *glXGetProcAddressARB(const GLubyte *name) { return glXGetProcAddress(name); }
 
@@ -119,6 +116,8 @@ JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     L(glDeleteFramebuffers) L(glDeleteRenderbuffers) L(glGenBuffers) L(glBindBuffer) L(glBufferData)
     L(glMapBufferRange) L(glUnmapBuffer) L(glReadPixels) L(glFlush)
     L(glRenderbufferStorageMultisample) L(glXGetProcAddress)
+    char buf[32]; snprintf(buf, sizeof buf, "%llx", (unsigned long long) (uintptr_t) resolve);
+    setenv("RLAWT_RESOLVER", buf, 1);
     return JNI_TRUE;
 }
 
