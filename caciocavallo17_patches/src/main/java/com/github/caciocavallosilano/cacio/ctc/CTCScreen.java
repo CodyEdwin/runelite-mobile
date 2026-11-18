@@ -90,6 +90,28 @@ implements PlatformScreen {
         return dataBufAux;
     }
 
+    private static sun.java2d.StateTracker sScreenTracker;
+    private static long sLastFullCopy;
+
+    /**
+     * Android blitter fast path (called from native code with {@link #SCREEN_LOCK} held): returns
+     * the screen's backing int[] (no copy) when it changed since the last call, else null. Change
+     * detection uses the raster's StateTrackable, which Java2D marks dirty on every rendering
+     * operation; a refresh is still forced every 250 ms in case some path bypasses it.
+     */
+    public static int[] getScreenPixelsIfChanged(boolean force) {
+        CTCScreen screen = instance;
+        if (screen == null || screen.screenBuffer == null) return null;
+        java.awt.image.DataBuffer db = screen.screenBuffer.getRaster().getDataBuffer();
+        if (!(db instanceof java.awt.image.DataBufferInt)) return null;
+        long now = System.nanoTime();
+        boolean stale = now - sLastFullCopy > 250_000_000L;
+        if (!force && !stale && sScreenTracker != null && sScreenTracker.isCurrent()) return null;
+        sScreenTracker = sun.awt.image.SunWritableRaster.stealTrackable(db).getStateTracker();
+        sLastFullCopy = now;
+        return sun.awt.image.SunWritableRaster.stealData((java.awt.image.DataBufferInt) db, 0);
+    }
+
     static {
         try {
             for (String ldLib : System.getenv("LD_LIBRARY_PATH").split(":")) {

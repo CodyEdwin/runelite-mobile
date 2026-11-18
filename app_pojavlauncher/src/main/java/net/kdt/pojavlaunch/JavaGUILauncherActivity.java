@@ -107,6 +107,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         mRuneLite = getIntent().getBooleanExtra(EXTRA_RUNELITE, false);
         mRequestedRuntime = getIntent().getStringExtra(EXTRA_RUNTIME);
         AWTCanvasView.setFpsOverlayEnabled(!mRuneLite);
+        AWTCanvasView.setFastBlitEnabled(mRuneLite);
         if (mRuneLite) {
             DisplayMetrics metrics = new DisplayMetrics();
             getWindowManager().getDefaultDisplay().getRealMetrics(metrics);

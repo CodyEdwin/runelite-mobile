@@ -163,8 +163,79 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         // Resizing the buffer after every frame causes flicker and rendering corruption.
     }
 
+    /** Fast path (cacio17 / RuneLite): native copy into the bitmap, only when the screen changed. */
+    private static volatile boolean sFastBlit;
+
+    public static void setFastBlitEnabled(boolean enabled) {
+        sFastBlit = enabled;
+    }
+
+    private void runFast() {
+        int canvasWidth = getCanvasWidth();
+        int canvasHeight = getCanvasHeight();
+        Surface surface = new Surface(getSurfaceTexture());
+        Bitmap bitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888);
+        boolean hardware = android.os.Build.VERSION.SDK_INT >= 23;
+        long statsStart = System.nanoTime();
+        int posted = 0, polls = 0;
+        boolean force = true;
+        net.kdt.pojavlaunch.utils.ThreadPlacement.placeRenderThread();
+        try {
+            while (!mIsDestroyed && surface.isValid()) {
+                polls++;
+                int r = JREUtils.renderAWTScreenFrameToBitmap(bitmap, force);
+                if (r < 0) {
+                    // Screen size changed (finalised from the laid-out view after this thread started).
+                    if (-r == getCanvasWidth() * getCanvasHeight()) {
+                        canvasWidth = getCanvasWidth();
+                        canvasHeight = getCanvasHeight();
+                        bitmap.recycle();
+                        bitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888);
+                        getSurfaceTexture().setDefaultBufferSize(canvasWidth, canvasHeight);
+                        post(() -> updateFitTransform(getWidth(), getHeight()));
+                        Log.i("AWTCanvasView", "virtual screen resized to " + canvasWidth + "x" + canvasHeight);
+                        force = true;
+                    } else {
+                        Thread.sleep(16);
+                    }
+                    continue;
+                }
+                if (r == 0) {
+                    // Nothing new: the TextureView keeps showing the last posted frame.
+                    Thread.sleep(4);
+                } else {
+                    force = false;
+                    Canvas canvas = hardware ? surface.lockHardwareCanvas() : surface.lockCanvas(null);
+                    try {
+                        canvas.drawBitmap(bitmap, 0, 0, null);
+                    } finally {
+                        surface.unlockCanvasAndPost(canvas);
+                    }
+                    posted++;
+                }
+                long now = System.nanoTime();
+                if (now - statsStart >= 5_000_000_000L) {
+                    Log.i("AWTCanvasView", String.format(java.util.Locale.ROOT, "blit: %.1f frames/s posted, %.0f polls/s",
+                            posted * 1e9 / (now - statsStart), polls * 1e9 / (now - statsStart)));
+                    statsStart = now;
+                    posted = 0;
+                    polls = 0;
+                    net.kdt.pojavlaunch.utils.ThreadPlacement.placeGameThreads();
+                }
+            }
+        } catch (Throwable throwable) {
+            Tools.showError(getContext(), throwable);
+        }
+        bitmap.recycle();
+        surface.release();
+    }
+
     @Override
     public void run() {
+        if (sFastBlit) {
+            runFast();
+            return;
+        }
         Canvas canvas;
         int canvasWidth = getCanvasWidth();
         int canvasHeight = getCanvasHeight();

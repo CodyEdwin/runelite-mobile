@@ -565,6 +565,9 @@ public class JREUtils {
     public static native void setupExitMethod(Context context);
     // Obtain AWT screen pixels to render on Android SurfaceView
     public static native int[] renderAWTScreenFrame(/* Object canvas, int width, int height */);
+    /** @return 1 updated, 0 unchanged/not ready, -N screen has N pixels (bitmap size mismatch) */
+    public static native int renderAWTScreenFrameToBitmap(android.graphics.Bitmap bitmap, boolean force);
+    public static native int setThreadAffinity(int tid, long mask);
     static {
         System.loadLibrary("exithook");
         System.loadLibrary("pojavexec");

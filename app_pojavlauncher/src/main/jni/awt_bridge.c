@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sched.h>
+#include <sys/syscall.h>
+#include <android/bitmap.h>
 
 static JavaVM* dalvikJavaVMPtr;
 
@@ -132,6 +136,82 @@ JNIEXPORT jintArray JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_renderAWTScr
     (*runtimeJNIEnvPtr_GRAPHICS)->DeleteLocalRef(runtimeJNIEnvPtr_GRAPHICS, jreRgbArray);
 
     return androidRgbArray;
+}
+
+static jclass class_CTCScreenGlobal = NULL;
+static jmethodID method_GetPixelsIfChanged = NULL;
+static jobject screenLockGlobal = NULL;
+
+/*
+ * Copy the cacio screen straight into an Android ARGB_8888 bitmap, only when it changed.
+ * Returns 1 when the bitmap was updated, 0 when the screen is unchanged (or not ready), and -N
+ * (N = pixel count of the screen) when the bitmap does not match the screen size.
+ *
+ * Replaces renderAWTScreenFrame's per-frame path (screen -> int[] copy in the JRE, JNI copy,
+ * a new 3 MB Android int[] every frame, Bitmap#setPixels) which used ~75% of a big core plus ART GC
+ * time on the same core as the game's Client thread.
+ */
+JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_renderAWTScreenFrameToBitmap(JNIEnv* env, jclass clazz, jobject bitmap, jboolean force) {
+    if (runtimeJNIEnvPtr_GRAPHICS == NULL) {
+        if (runtimeJavaVMPtr == NULL) return 0;
+        (*runtimeJavaVMPtr)->AttachCurrentThread(runtimeJavaVMPtr, &runtimeJNIEnvPtr_GRAPHICS, NULL);
+    }
+    JNIEnv* jre = runtimeJNIEnvPtr_GRAPHICS;
+    if (method_GetPixelsIfChanged == NULL) {
+        jclass cls = (*jre)->FindClass(jre, "com/github/caciocavallosilano/cacio/ctc/CTCScreen");
+        if (cls == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); return 0; }
+        jmethodID m = (*jre)->GetStaticMethodID(jre, cls, "getScreenPixelsIfChanged", "(Z)[I");
+        jfieldID f = m == NULL ? NULL : (*jre)->GetStaticFieldID(jre, cls, "SCREEN_LOCK", "Ljava/lang/Object;");
+        if (m == NULL || f == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); (*jre)->DeleteLocalRef(jre, cls); return 0; }
+        jobject lock = (*jre)->GetStaticObjectField(jre, cls, f);
+        screenLockGlobal = (*jre)->NewGlobalRef(jre, lock);
+        (*jre)->DeleteLocalRef(jre, lock);
+        class_CTCScreenGlobal = (*jre)->NewGlobalRef(jre, cls);
+        (*jre)->DeleteLocalRef(jre, cls);
+        method_GetPixelsIfChanged = m;
+    }
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS
+            || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) return 0;
+
+    jint result = 0;
+    (*jre)->MonitorEnter(jre, screenLockGlobal);
+    jintArray pixels = (jintArray) (*jre)->CallStaticObjectMethod(jre, class_CTCScreenGlobal, method_GetPixelsIfChanged, force);
+    if ((*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); pixels = NULL; }
+    if (pixels != NULL) {
+        jsize length = (*jre)->GetArrayLength(jre, pixels);
+        if ((jsize) (info.width * info.height) != length) {
+            result = -length;
+        } else {
+            void* dst = NULL;
+            if (AndroidBitmap_lockPixels(env, bitmap, &dst) == ANDROID_BITMAP_RESULT_SUCCESS) {
+                const uint32_t* src = (*jre)->GetPrimitiveArrayCritical(jre, pixels, NULL);
+                if (src != NULL) {
+                    const uint32_t w = info.width, h = info.height;
+                    for (uint32_t y = 0; y < h; y++) {
+                        const uint32_t* s = src + (size_t) y * w;
+                        uint32_t* d = (uint32_t*) ((char*) dst + (size_t) y * info.stride);
+                        for (uint32_t x = 0; x < w; x++) {
+                            uint32_t p = s[x]; /* 0xAARRGGBB -> RGBA bytes (0xAABBGGRR), opaque */
+                            d[x] = 0xFF000000u | (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16);
+                        }
+                    }
+                    (*jre)->ReleasePrimitiveArrayCritical(jre, pixels, (void*) src, JNI_ABORT);
+                    result = 1;
+                }
+                AndroidBitmap_unlockPixels(env, bitmap);
+            }
+        }
+        (*jre)->DeleteLocalRef(jre, pixels);
+    }
+    (*jre)->MonitorExit(jre, screenLockGlobal);
+    return result;
+}
+
+/* sched_setaffinity for a thread of this process (tid), mask = bit per CPU. */
+JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setThreadAffinity(JNIEnv* env, jclass clazz, jint tid, jlong mask) {
+    unsigned long set = (unsigned long) mask; /* kernel cpumask: bit i = cpu i */
+    return (jint) syscall(__NR_sched_setaffinity, (pid_t) tid, sizeof(set), &set);
 }
 
 JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCClipboard_nQuerySystemClipboard(JNIEnv *env, jclass clazz) {

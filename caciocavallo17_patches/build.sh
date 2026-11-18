@@ -8,6 +8,8 @@ CACIO="$HERE/../app_pojavlauncher/src/main/assets/components/caciocavallo17"
 OUT="$(mktemp -d)"
 javac -source 17 -target 17 -nowarn \
     --add-exports java.desktop/java.awt.peer=ALL-UNNAMED \
+    --add-exports java.desktop/sun.awt.image=ALL-UNNAMED \
+    --add-exports java.desktop/sun.java2d=ALL-UNNAMED \
     -cp "$CACIO/cacio-shared-1.18-SNAPSHOT.jar:$CACIO/cacio-tta-1.18-SNAPSHOT.jar" \
     -d "$OUT" $(find "$HERE/src/main/java" -name '*.java')
 (cd "$OUT" && jar uf "$CACIO/cacio-tta-1.18-SNAPSHOT.jar" $(find . -name '*.class'))
