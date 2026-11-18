@@ -35,6 +35,8 @@ public class JREUtils {
 
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
+    /** GPU mode (experimental) is on for this launch: set MobileGlues' environment. */
+    public static boolean gpuMode;
 
     public static String findInLdLibPath(String libName) {
         if(Os.getenv("LD_LIBRARY_PATH")==null) {
@@ -173,6 +175,11 @@ public class JREUtils {
         envMap.put("HOME", Tools.DIR_GAME_HOME);
         envMap.put("TMPDIR", Tools.DIR_CACHE.getAbsolutePath());
         envMap.put("LIBGL_MIPMAP", "3");
+        if (gpuMode) {
+            File mgDir = new File(Tools.DIR_GAME_HOME, "MG");
+            mgDir.mkdirs();
+            envMap.put("MG_DIR_PATH", mgDir.getAbsolutePath());
+        }
 
         // Prevent OptiFine (and other error-reporting stuff in Minecraft) from balooning the log
         envMap.put("LIBGL_NOERROR", "1");

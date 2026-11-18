@@ -74,6 +74,13 @@ include $(BUILD_SHARED_LIBRARY)
 
 # fake lib for linker
 include $(CLEAR_VARS)
+LOCAL_MODULE := rlawt_android
+LOCAL_SRC_FILES := rlawt/rlawt_android.c
+LOCAL_LDLIBS := -ldl -llog
+LOCAL_CFLAGS += -O3
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
 LOCAL_MODULE := awt_headless
 include $(BUILD_SHARED_LIBRARY)
 

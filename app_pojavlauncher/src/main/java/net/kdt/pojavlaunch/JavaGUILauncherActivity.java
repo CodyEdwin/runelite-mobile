@@ -390,6 +390,36 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                         net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false)) {
                     args.add("-Drunelite.android.performanceMode=true");
                 }
+                String gpuClasspath = "";
+                // GPU mode (experimental): RuneLite's GPU plugin on MobileGlues (desktop GL over GLES)
+                // through an offscreen EGL context (see net.runelite.rlawt.AWTContext in the shim).
+                if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+                        net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_KEY_RUNELITE_GPU, false)) {
+                    String nativeDir = getApplicationInfo().nativeLibraryDir;
+                    args.add("-Drunelite.android.gpu=true");
+                    args.add("-Drunelite.android.nativeDir=" + nativeDir);
+                    args.add("-Dorg.lwjgl.librarypath=" + nativeDir);
+                    args.add("-Dorg.lwjgl.opengl.libname=" + nativeDir + "/libmobileglues.so");
+                    JREUtils.gpuMode = true;
+                    // RuneLite's jar carries glibc builds of liblwjgl(_opengl).so that LWJGL extracts
+                    // before looking at org.lwjgl.librarypath. A classpath directory ahead of it with
+                    // the same resource names makes LWJGL load our Android builds straight from disk.
+                    try {
+                        File lwjglDir = new File(getFilesDir(), "gpu-natives/linux/arm64/org/lwjgl");
+                        new File(lwjglDir, "opengl").mkdirs();
+                        String[][] links = {{"liblwjgl.so", "liblwjgl.so"}, {"liblwjgl_opengl.so", "opengl/liblwjgl_opengl.so"}};
+                        for (String[] l : links) {
+                            File link = new File(lwjglDir, l[1]);
+                            link.delete();
+                            android.system.Os.symlink(nativeDir + "/" + l[0], link.getAbsolutePath());
+                        }
+                        String gpuDir = new File(getFilesDir(), "gpu-natives").getAbsolutePath();
+                        args.add("-Drunelite.android.gpuDir=" + gpuDir);
+                        gpuClasspath = gpuDir + File.pathSeparator;
+                    } catch (Exception e) {
+                        Log.w("JavaGUILauncher", "GPU mode: could not link LWJGL natives", e);
+                    }
+                }
                 // Keep RuneLite's ~/.runelite inside its own instance directory
                 args.add("-Duser.home=" + Tools.getRuneLiteDir().getAbsolutePath());
                 String clientJars = clientClasspath != null ? clientClasspath : jar.getAbsolutePath();
@@ -409,7 +439,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 // entry point makes the client frame fill the caciocavallo virtual screen.
                 File androidJar = Tools.getRuneLiteAndroidJar();
                 if (androidJar.isFile()) {
-                    args.add(androidJar.getAbsolutePath() + File.pathSeparator + clientJars);
+                    args.add(gpuClasspath + androidJar.getAbsolutePath() + File.pathSeparator + clientJars);
                     args.add("net.kdt.pojavlaunch.runelite.AndroidRuneLite");
                 } else {
                     Log.w("JavaGUILauncher", "runelite-android.jar missing, starting RuneLite without Android fixes");

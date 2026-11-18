@@ -142,6 +142,8 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
 
         right.addView(toggle("Performance mode (lower resolution, higher FPS)",
                 LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false));
+        right.addView(toggle("GPU mode (experimental)",
+                LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
         right.addView(toggle("Load sideloaded plugins",
                 LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
         right.addView(action("Import plugin (.jar)", v -> importPlugin()));

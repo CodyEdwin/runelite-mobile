@@ -37,6 +37,7 @@ public final class AndroidRuneLite {
         FpsLog.install();
         InputFocus.install();
         javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
+        javax.swing.SwingUtilities.invokeLater(GpuMode::install);
 
         net.runelite.client.rs.auth.AndroidSessionKeyMigration.migrate(new java.io.File(System.getProperty("user.home")));
         args = JagexSessionMemory.addSavedCharacter(args);
