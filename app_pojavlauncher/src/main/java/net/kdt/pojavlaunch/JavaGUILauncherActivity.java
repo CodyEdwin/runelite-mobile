@@ -391,13 +391,14 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     args.add("-Drunelite.android.performanceMode=true");
                 }
                 String gpuClasspath = "";
+                // Native helpers loaded by the shim (AAudio sound output, GPU mode).
+                args.add("-Drunelite.android.nativeDir=" + getApplicationInfo().nativeLibraryDir);
                 // GPU mode (experimental): RuneLite's GPU plugin on MobileGlues (desktop GL over GLES)
                 // through an offscreen EGL context (see net.runelite.rlawt.AWTContext in the shim).
                 if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
                         net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_KEY_RUNELITE_GPU, false)) {
                     String nativeDir = getApplicationInfo().nativeLibraryDir;
                     args.add("-Drunelite.android.gpu=true");
-                    args.add("-Drunelite.android.nativeDir=" + nativeDir);
                     args.add("-Dorg.lwjgl.librarypath=" + nativeDir);
                     // LWJGL's "libGL" is our wrapper: it forwards to MobileGlues and fixes GLES quirks.
                     args.add("-Dorg.lwjgl.opengl.libname=" + nativeDir + "/librlawt_android.so");
