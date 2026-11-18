@@ -146,6 +146,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
         right.addView(toggle("Load sideloaded plugins",
                 LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
+        right.addView(action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
         right.addView(action("Import plugin (.jar)", v -> importPlugin()));
         right.addView(action("Open game directory", v -> Tools.openPath(this, Tools.getRuneLiteDir(), false)));
         right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));

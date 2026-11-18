@@ -249,7 +249,7 @@ public final class Tools {
     /** Bundled plugin jars (Cody's VPS plugins) inside the APK. */
     public static final String RUNELITE_BUNDLED_PLUGINS_ASSET = "runelite/sideloaded-plugins";
     /** Plugins that cannot work on Android (no OpenGL), never copied into RuneLite's folder. */
-    private static boolean isKnownBrokenRuneLitePlugin(String name) {
+    public static boolean isKnownBrokenRuneLitePlugin(String name) {
         return name.toLowerCase(java.util.Locale.ROOT).startsWith("117hd");
     }
 
@@ -259,6 +259,22 @@ public final class Tools {
      * When {@code enabled} is false the folder is emptied so RuneLite loads none of them; the
      * visible folder is never touched.
      */
+    /** Pref key: true = this sideloadable jar is switched off (RuneLitePluginsActivity). Default on. */
+    public static String runeLitePluginOffKey(String jarName) {
+        return "runelitePluginOff:" + jarName;
+    }
+
+    /** Bundled plugin jar names in the APK (without known-broken ones). */
+    public static java.util.List<String> listBundledRuneLitePlugins(Context context) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            String[] bundled = context.getAssets().list(RUNELITE_BUNDLED_PLUGINS_ASSET);
+            if (bundled != null) for (String n : bundled) if (n.endsWith(".jar") && !isKnownBrokenRuneLitePlugin(n)) out.add(n);
+        } catch (IOException ignored) {
+        }
+        return out;
+    }
+
     public static void syncRuneLiteSideloadedPlugins(Context context, boolean enabled) throws IOException {
         File visible = getRuneLiteSideloadDir();
         File target = new File(getRuneLiteDir(), ".runelite/sideloaded-plugins");
@@ -274,6 +290,7 @@ public final class Tools {
             Log.i("RuneLitePlugins", "Sideloaded plugins disabled: cleared " + target);
             return;
         }
+        android.content.SharedPreferences off = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
         java.util.Set<String> previous = new java.util.HashSet<>();
         if (manifest.isFile()) {
             try (InputStream input = new FileInputStream(manifest)) {
@@ -301,6 +318,7 @@ public final class Tools {
         if (bundled != null) {
             for (String name : bundled) {
                 if (!name.endsWith(".jar") || isKnownBrokenRuneLitePlugin(name)) continue;
+                if (off.getBoolean(runeLitePluginOffKey(name), false)) continue; // switched off by the user
                 present.add(name);
                 File copy = new File(target, name);
                 if (refreshBundled || !copy.isFile()) {
@@ -323,6 +341,10 @@ public final class Tools {
                     Log.i("RuneLitePlugins", "Skipping " + jar.getName() + " (needs OpenGL, not available on Android)");
                     continue;
                 }
+                if (off.getBoolean(runeLitePluginOffKey(jar.getName()), false)) {
+                    Log.i("RuneLitePlugins", "Skipping " + jar.getName() + " (switched off)");
+                    continue;
+                }
                 present.add(jar.getName());
                 File copy = new File(target, jar.getName());
                 if (!copy.isFile() || copy.length() != jar.length() || copy.lastModified() < jar.lastModified()) {
@@ -335,7 +357,11 @@ public final class Tools {
             if (!present.contains(name)) new File(target, name).delete();
         }
         File[] existing = target.listFiles((dir, name) -> name.endsWith(".jar"));
-        if (existing != null) for (File f : existing) if (isKnownBrokenRuneLitePlugin(f.getName())) f.delete();
+        if (existing != null) for (File f : existing) {
+            // known broken, or switched off by the user (only RuneLite's mirror copy; the APK and the
+            // visible folder are untouched, so switching it back on restores it)
+            if (isKnownBrokenRuneLitePlugin(f.getName()) || off.getBoolean(runeLitePluginOffKey(f.getName()), false)) f.delete();
+        }
         StringBuilder mirrored = new StringBuilder();
         for (String name : present) mirrored.append(name).append('\n');
         try (FileOutputStream output = new FileOutputStream(manifest)) {
