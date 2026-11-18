@@ -40,9 +40,7 @@ final class WindowFitter {
 
     private static final Map<Window, Boolean> sDecorated = new WeakHashMap<>();
     private static final Map<Window, Timer> sRefitTimers = new WeakHashMap<>();
-    /** Layout/window debug output: -Drunelite.android.debugWindows=true or ~/.runelite/android-debug-windows. */
-    static final boolean DEBUG = Boolean.getBoolean("runelite.android.debugWindows")
-            || new java.io.File(System.getProperty("user.home"), ".runelite/android-debug-windows").exists();
+    private static final boolean DEBUG = Boolean.getBoolean("runelite.android.debugWindows");
 
     private WindowFitter() {
     }
@@ -154,13 +152,9 @@ final class WindowFitter {
     }
 
     private static void dump(Window window, Rectangle screen) {
-        if (sDumps++ > 400) return;
+        if (sDumps++ > 200) return;
         StringBuilder sb = new StringBuilder("WindowFitter: screen=").append(screen)
                 .append(" state=").append(((Frame) window).getExtendedState()).append('\n');
-        for (Window w : Window.getWindows()) {
-            sb.append("  window ").append(w.getClass().getName()).append(' ').append(w.getBounds())
-                    .append(w.isShowing() ? " showing" : "").append(w.isVisible() ? " visible" : "").append('\n');
-        }
         dump(sb, window, 0);
         System.out.print(sb);
     }
@@ -170,7 +164,7 @@ final class WindowFitter {
         sb.append(c.getClass().getName()).append(' ').append(c.getBounds())
                 .append(c.isVisible() ? "" : " hidden").append(" pref=").append(c.getPreferredSize())
                 .append(" min=").append(c.getMinimumSize()).append('\n');
-        if (depth < 9 && c instanceof java.awt.Container) {
+        if (depth < 6 && c instanceof java.awt.Container) {
             for (java.awt.Component child : ((java.awt.Container) c).getComponents()) dump(sb, child, depth + 1);
         }
     }

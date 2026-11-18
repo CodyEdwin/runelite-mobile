@@ -40,7 +40,7 @@ final class RepaintPump {
         InputFocus.ensureFocusOwner();
         WindowFitter.enforce();
         if ((sTicks++ % 30) == 0) simpleScrollViewports();
-        if (sTicks % 60 == 0) WindowFitter.debugDump();
+        if (sTicks % 150 == 0 && sTicks <= 150 * 12) WindowFitter.debugDump();
         for (Window window : Window.getWindows()) {
             if (!window.isShowing()) continue;
             if (!window.isValid()) window.validate();
