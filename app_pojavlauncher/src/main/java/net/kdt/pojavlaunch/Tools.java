@@ -643,11 +643,16 @@ public final class Tools {
         return new File(getRuneLiteDir(), "runelite.jar");
     }
 
+    /** Android entry point + overrides, see runelite_android_shim/ in the repository root. */
+    public static File getRuneLiteAndroidJar() {
+        return new File(getRuneLiteDir(), "runelite-android.jar");
+    }
+
     /**
      * Make sure the bundled RuneLite jar is present. Components are normally unpacked in the
      * background at startup; this is a safety net for the first tap on "Play".
      */
-    private static final String RUNELITE_JAR_REVISION = "xdarl-framefix-2";
+    private static final String RUNELITE_JAR_REVISION = "xdarl-android-shim-1";
     private static final String RUNELITE_JAR_REVISION_FILE = ".jar-revision";
 
     public static void ensureRuneLiteInstalled(Context context) throws IOException {
@@ -675,12 +680,14 @@ public final class Tools {
                         runeLiteDir.getAbsolutePath(), true);
             }
         } else {
-            // Replace only the client jar so existing RuneLite profiles and settings survive.
+            // Replace only the client jars so existing RuneLite profiles and settings survive.
             copyAssetFile(context, "components/runelite/runelite.jar",
+                    runeLiteDir.getAbsolutePath(), true);
+            copyAssetFile(context, "components/runelite/runelite-android.jar",
                     runeLiteDir.getAbsolutePath(), true);
         }
 
-        if (!jar.isFile())
+        if (!jar.isFile() || !getRuneLiteAndroidJar().isFile())
             throw new IOException("Failed to unpack the RuneLite client");
         try (FileOutputStream output = new FileOutputStream(revisionFile)) {
             output.write(RUNELITE_JAR_REVISION.getBytes("UTF-8"));

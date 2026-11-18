@@ -14,8 +14,9 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     public static final int DEFAULT_AWT_CANVAS_WIDTH = 720;
     public static final int DEFAULT_AWT_CANVAS_HEIGHT = 600;
     /**
-     * RuneLite's client is 765x503px plus a 225px plugin sidebar and its own title/menu bar.
-     * Keep the virtual screen just large enough for that frame so the game fills the view.
+     * RuneLite's client is 765x503px plus a ~240px plugin sidebar and its toolbar/menu bar.
+     * The virtual screen is this tall and at least this wide; the width is widened to the
+     * device aspect ratio (see {@link #getRuneLiteCanvasSize}) so nothing is letterboxed.
      */
     public static final int RUNELITE_AWT_CANVAS_WIDTH = 1024;
     public static final int RUNELITE_AWT_CANVAS_HEIGHT = 600;
@@ -53,6 +54,69 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         sFpsOverlayEnabled = enabled;
     }
 
+    /**
+     * Virtual screen size for RuneLite: fixed height, width matched to the (landscape) display
+     * aspect ratio so the whole Android surface is used without letterboxing.
+     */
+    public static Point getRuneLiteCanvasSize(int displayWidth, int displayHeight) {
+        int longSide = Math.max(displayWidth, displayHeight);
+        int shortSide = Math.min(displayWidth, displayHeight);
+        int height = RUNELITE_AWT_CANVAS_HEIGHT;
+        int width = RUNELITE_AWT_CANVAS_WIDTH;
+        if (longSide > 0 && shortSide > 0) {
+            width = Math.max(width, Math.round(height * (float) longSide / shortSide));
+        }
+        // Keep the width even; some blit paths dislike odd strides.
+        return new Point(width + (width & 1), height);
+    }
+
+    /** Transform from the AWT virtual screen to view coordinates (uniform scale + centring). */
+    private volatile float mScale = 1f;
+    private volatile float mOffsetX = 0f;
+    private volatile float mOffsetY = 0f;
+
+    /**
+     * Map a point in this view's local coordinates to the AWT virtual screen, using the same
+     * fit-centre transform that is used to display the frame. Points in the letterbox area are
+     * clamped to the nearest edge.
+     */
+    public void viewToCanvas(float viewX, float viewY, PointF out) {
+        float x = (viewX - mOffsetX) / mScale;
+        float y = (viewY - mOffsetY) / mScale;
+        out.x = Math.max(0, Math.min(getCanvasWidth() - 1, x));
+        out.y = Math.max(0, Math.min(getCanvasHeight() - 1, y));
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        updateFitTransform(w, h);
+    }
+
+    /**
+     * TextureView stretches its buffer to the view bounds. Undo that and fit the virtual screen
+     * with a uniform scale, centred, so the image is never distorted and touch mapping is exact.
+     * (The old code changed the view's LayoutParams once, right after creation; with
+     * sensorLandscape + configChanges="orientation" that often happened while the window was
+     * still portrait, leaving a wrongly sized view for the rest of the session.)
+     */
+    private void updateFitTransform(int viewWidth, int viewHeight) {
+        if (viewWidth <= 0 || viewHeight <= 0) return;
+        int bufferWidth = getCanvasWidth();
+        int bufferHeight = getCanvasHeight();
+        float scale = Math.min((float) viewWidth / bufferWidth, (float) viewHeight / bufferHeight);
+        float contentWidth = bufferWidth * scale;
+        float contentHeight = bufferHeight * scale;
+        mScale = scale;
+        mOffsetX = (viewWidth - contentWidth) / 2f;
+        mOffsetY = (viewHeight - contentHeight) / 2f;
+
+        Matrix matrix = new Matrix();
+        matrix.setScale(contentWidth / viewWidth, contentHeight / viewHeight);
+        matrix.postTranslate(mOffsetX, mOffsetY);
+        setTransform(matrix);
+    }
+
     // Temporary count fps https://stackoverflow.com/a/13729241
     private final LinkedList<Long> mTimes = new LinkedList<Long>(){{add(System.nanoTime());}};
     
@@ -69,13 +133,12 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
 
 
         setSurfaceTextureListener(this);
-
-        post(this::refreshSize);
     }
 
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture texture, int w, int h) {
         texture.setDefaultBufferSize(getCanvasWidth(), getCanvasHeight());
+        updateFitTransform(getWidth(), getHeight());
         mIsDestroyed = false;
         new Thread(this, "AndroidAWTRenderer").start();
     }
@@ -147,19 +210,6 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
             mTimes.removeFirst();
         }
         return difference > 0 ? mTimes.size() / difference : 0.0;
-    }
-
-    /** Make the view fit the proper aspect ratio of the surface */
-    private void refreshSize(){
-        ViewGroup.LayoutParams layoutParams = getLayoutParams();
-
-        if(getHeight() < getWidth()){
-            layoutParams.width = getCanvasWidth() * getHeight() / getCanvasHeight();
-        }else{
-            layoutParams.height = getCanvasHeight() * getWidth() / getCanvasWidth();
-        }
-
-        setLayoutParams(layoutParams);
     }
 
 }

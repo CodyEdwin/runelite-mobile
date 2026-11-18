@@ -6,14 +6,21 @@ import android.annotation.SuppressLint;
 import android.app.ProgressDialog;
 import android.content.ClipboardManager;
 import android.net.Uri;
+import android.graphics.Point;
+import android.graphics.PointF;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -41,6 +48,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,6 +64,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     /** Name of the Java runtime that should be used (optional, avoids re-picking it). */
     public static final String EXTRA_RUNTIME = "runtimeName";
 
+    private static WeakReference<JavaGUILauncherActivity> sRunningInstance = new WeakReference<>(null);
+
     private boolean mRuneLite;
     private String mRequestedRuntime;
     private AWTCanvasView mTextureView;
@@ -70,6 +80,13 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     private boolean mRuneLiteShiftDown;
     private int mMouseButtonState;
     private final int[] mMouseViewLocation = new int[2];
+    private final PointF mCanvasPoint = new PointF();
+    private RuneLiteTouchHandler mRuneLiteTouchHandler;
+
+    /** Activity hosting the AWT surface, used by MainActivity#openLink for Desktop#browse. */
+    public static JavaGUILauncherActivity getRunningInstance() {
+        return sRunningInstance.get();
+    }
     
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -78,12 +95,15 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
         // Read the launch mode before inflating the layout: AWTCanvasView uses a static
         // virtual screen size which must match -Dcacio.managed.screensize later on.
+        sRunningInstance = new WeakReference<>(this);
         mRuneLite = getIntent().getBooleanExtra(EXTRA_RUNELITE, false);
         mRequestedRuntime = getIntent().getStringExtra(EXTRA_RUNTIME);
         AWTCanvasView.setFpsOverlayEnabled(!mRuneLite);
         if (mRuneLite) {
-            AWTCanvasView.setCanvasSize(AWTCanvasView.RUNELITE_AWT_CANVAS_WIDTH,
-                    AWTCanvasView.RUNELITE_AWT_CANVAS_HEIGHT);
+            DisplayMetrics metrics = new DisplayMetrics();
+            getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+            Point size = AWTCanvasView.getRuneLiteCanvasSize(metrics.widthPixels, metrics.heightPixels);
+            AWTCanvasView.setCanvasSize(size.x, size.y);
         } else {
             AWTCanvasView.resetCanvasSize();
         }
@@ -158,7 +178,11 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             }
         });
 
+        if (mRuneLite) {
+            mRuneLiteTouchHandler = new RuneLiteTouchHandler();
+        }
         mTextureView.setOnTouchListener((v, event) -> {
+            if (mRuneLiteTouchHandler != null) return mRuneLiteTouchHandler.onTouch(event);
             float x = event.getX();
             float y = event.getY();
             if (mGestureDetector.onTouchEvent(event)) {
@@ -277,8 +301,17 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 // Keep RuneLite's ~/.runelite inside its own instance directory
                 args.add("-Duser.home=" + Tools.getRuneLiteDir().getAbsolutePath());
                 args.add("-cp");
-                args.add(jar.getAbsolutePath());
-                args.add("net.runelite.client.RuneLite");
+                // runelite-android.jar must come first: it overrides JagexAuthService and its
+                // entry point makes the client frame fill the caciocavallo virtual screen.
+                File androidJar = Tools.getRuneLiteAndroidJar();
+                if (androidJar.isFile()) {
+                    args.add(androidJar.getAbsolutePath() + File.pathSeparator + jar.getAbsolutePath());
+                    args.add("net.kdt.pojavlaunch.runelite.AndroidRuneLite");
+                } else {
+                    Log.w("JavaGUILauncher", "runelite-android.jar missing, starting RuneLite without Android fixes");
+                    args.add(jar.getAbsolutePath());
+                    args.add("net.runelite.client.RuneLite");
+                }
                 args.add("--developer-mode");
                 launchJavaRuntime(runtime, null, args);
             } catch (Throwable t) {
@@ -574,15 +607,85 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         sendLocalMousePosition(x - mTextureView.getX(), y - mTextureView.getY());
     }
 
+    /** @param x,y position in the texture view's local coordinates */
     private void sendLocalMousePosition(float x, float y) {
-        // Clamp positions to the borders of the texture view, then scale them.
-        x = androidx.core.math.MathUtils.clamp(x, 0, mTextureView.getWidth());
-        y = androidx.core.math.MathUtils.clamp(y, 0, mTextureView.getHeight());
+        // Use the exact inverse of the transform used to display the AWT screen.
+        mTextureView.viewToCanvas(x, y, mCanvasPoint);
+        AWTInputBridge.sendMousePos((int) mCanvasPoint.x, (int) mCanvasPoint.y);
+    }
 
-        AWTInputBridge.sendMousePos(
-                (int) MathUtils.map(x, 0, mTextureView.getWidth(), 0, AWTCanvasView.getCanvasWidth()),
-                (int) MathUtils.map(y, 0, mTextureView.getHeight(), 0, AWTCanvasView.getCanvasHeight())
-                );
+    /**
+     * Direct touch input for RuneLite:
+     * <ul>
+     *   <li>tap: left click at the finger;</li>
+     *   <li>hold still: right click (opens the OSRS/RuneLite context menu);</li>
+     *   <li>drag: left button held while moving (scrollbars, dragging items, sliders).</li>
+     * </ul>
+     * Previously a click was only sent from GestureDetector#onSingleTapUp, which is skipped as
+     * soon as the finger moves past the touch slop or is held longer than the tap timeout, so
+     * most taps on a phone only moved the cursor and never clicked.
+     */
+    private class RuneLiteTouchHandler {
+        private final Handler mHandler = new Handler(Looper.getMainLooper());
+        private final int mTouchSlop = ViewConfiguration.get(JavaGUILauncherActivity.this).getScaledTouchSlop();
+        private float mDownX, mDownY;
+        private boolean mDragging, mLongPressed, mTracking;
+
+        private final Runnable mLongPress = () -> {
+            if (!mTracking || mDragging) return;
+            mLongPressed = true;
+            mTextureView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            sendLocalMousePosition(mDownX, mDownY);
+            AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON3_DOWN_MASK);
+        };
+
+        boolean onTouch(MotionEvent event) {
+            float x = event.getX();
+            float y = event.getY();
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    mDownX = x;
+                    mDownY = y;
+                    mDragging = false;
+                    mLongPressed = false;
+                    mTracking = true;
+                    sendLocalMousePosition(x, y);
+                    mHandler.postDelayed(mLongPress, ViewConfiguration.getLongPressTimeout());
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (!mTracking) break;
+                    if (!mDragging && !mLongPressed
+                            && Math.hypot(x - mDownX, y - mDownY) > mTouchSlop) {
+                        mHandler.removeCallbacks(mLongPress);
+                        mDragging = true;
+                        sendLocalMousePosition(mDownX, mDownY);
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK, true);
+                    }
+                    sendLocalMousePosition(x, y);
+                    break;
+                case MotionEvent.ACTION_UP:
+                    if (!mTracking) break;
+                    mHandler.removeCallbacks(mLongPress);
+                    if (mDragging) {
+                        sendLocalMousePosition(x, y);
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK, false);
+                    } else if (!mLongPressed) {
+                        // Click where the finger went down; small jitter must not move it.
+                        sendLocalMousePosition(mDownX, mDownY);
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK);
+                    }
+                    mTracking = false;
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    mHandler.removeCallbacks(mLongPress);
+                    if (mDragging) AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK, false);
+                    mTracking = false;
+                    break;
+                default:
+                    break;
+            }
+            return true;
+        }
     }
 
     public void forceClose(View v) {
