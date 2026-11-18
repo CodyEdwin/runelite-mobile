@@ -26,6 +26,7 @@ public final class AndroidRuneLite {
 
     public static void main(String[] args) throws Throwable {
         System.setProperty(ANDROID_PROPERTY, "true");
+        fixPluginHubVersion();
         // Swing's per-window BufferStrategy painting assumes the window system keeps window contents
         // and only repaints damaged areas; on the cacio screen that lost sidebar/panel contents.
         if (System.getProperty("swing.bufferPerWindow") == null) System.setProperty("swing.bufferPerWindow", "false");
@@ -50,5 +51,48 @@ public final class AndroidRuneLite {
             throw e.getCause();
         }
         JagexSessionMemory.autoSelectSingleCharacter();
+    }
+
+    /**
+     * The client we run is a -SNAPSHOT build and RuneLite asks the Plugin Hub for the manifest of
+     * its own version (repo.runelite.net/plugins/manifest/1.13.7-SNAPSHOT_full.js), which doesn't
+     * exist (404), so the hub list was empty and 117 HD etc. could not be found. Point the hub at
+     * the current release (from RuneLite's bootstrap, else the previous patch version).
+     */
+    private static void fixPluginHubVersion() {
+        final String key = "runelite.pluginhub.version";
+        if (System.getProperty(key) != null) return;
+        try {
+            java.util.Properties props = new java.util.Properties();
+            try (java.io.InputStream in = AndroidRuneLite.class.getClassLoader().getResourceAsStream("net/runelite/client/runelite.properties")) {
+                if (in == null) return;
+                props.load(in);
+            }
+            String v = props.getProperty(key);
+            if (v == null || !v.endsWith("-SNAPSHOT")) return;
+            String rel = null;
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL("https://static.runelite.net/bootstrap.json").openConnection();
+                c.setConnectTimeout(4000);
+                c.setReadTimeout(4000);
+                try (java.io.InputStream in = c.getInputStream()) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"name\"\\s*:\\s*\"client-([0-9.]+)\\.jar\"")
+                            .matcher(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                    if (m.find()) rel = m.group(1);
+                }
+            } catch (Exception e) {
+                System.err.println("PluginHub: bootstrap lookup failed: " + e);
+            }
+            if (rel == null) {
+                String base = v.substring(0, v.length() - "-SNAPSHOT".length());
+                int dot = base.lastIndexOf('.');
+                int patch = Integer.parseInt(base.substring(dot + 1));
+                rel = patch > 0 ? base.substring(0, dot + 1) + (patch - 1) : base;
+            }
+            System.setProperty(key, rel);
+            System.out.println("PluginHub: client is " + v + ", using the " + rel + " Plugin Hub manifest");
+        } catch (Exception e) {
+            System.err.println("PluginHub: " + e);
+        }
     }
 }
