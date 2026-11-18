@@ -174,14 +174,70 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         return t;
     }
 
+    /**
+     * Row switch that toggles on a plain tap only. SwitchCompat's own touch handling starts a thumb
+     * drag on small finger movement; inside the scrolling settings column the ScrollView then steals
+     * the gesture and the switch snaps back without ever changing (no listener call), which is what
+     * the GPU switch did on the OnePlus Nord. Any later programmatic change is logged with its caller.
+     */
+    private final class RowSwitch extends SwitchCompat {
+        private float downX, downY;
+        private boolean userChange, ready;
+        private final int slop = android.view.ViewConfiguration.get(RuneLiteMobileActivity.this).getScaledTouchSlop() * 3;
+
+        RowSwitch() {
+            super(RuneLiteMobileActivity.this);
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent e) {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    downX = e.getX();
+                    downY = e.getY();
+                    setPressed(true);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                    setPressed(false);
+                    if (Math.abs(e.getX() - downX) < slop && Math.abs(e.getY() - downY) < slop) {
+                        final boolean want = !isChecked();
+                        userChange = true;
+                        setChecked(want);
+                        userChange = false;
+                        postDelayed(() -> {
+                            if (isChecked() != want) {
+                                String m = "'" + getText() + "' was switched back by the app";
+                                android.util.Log.w("RuneLiteMobile", m);
+                                Toast.makeText(getContext(), m, Toast.LENGTH_LONG).show();
+                            }
+                        }, 500);
+                    }
+                    break;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    setPressed(false);
+                    break;
+            }
+            return true;
+        }
+
+        @Override
+        public void setChecked(boolean checked) {
+            if (ready && !userChange && checked != isChecked()) {
+                android.util.Log.w("RuneLiteMobile", "'" + getText() + "' changed to " + checked + " by code", new Throwable());
+            }
+            super.setChecked(checked);
+        }
+    }
+
     private View toggle(String text, String key, boolean def) {
-        SwitchCompat s = new SwitchCompat(this);
+        RowSwitch s = new RowSwitch();
         s.setText(text);
         s.setTextColor(Color.WHITE);
         s.setTextSize(16);
         s.setPadding(dp(16), 0, dp(16), 0);
         s.setBackground(panel(PANEL));
         s.setChecked(prefs.getBoolean(key, def));
+        s.ready = true;
         s.setOnCheckedChangeListener((b, checked) -> {
             // commit() so the value is on disk before PLAY starts the RuneLite process, which
             // reads it from disk; then verify it stuck.
