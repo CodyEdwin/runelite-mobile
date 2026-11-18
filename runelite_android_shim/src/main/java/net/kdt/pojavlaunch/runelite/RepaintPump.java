@@ -40,6 +40,7 @@ final class RepaintPump {
         InputFocus.ensureFocusOwner();
         WindowFitter.enforce();
         if ((sTicks++ % 30) == 0) simpleScrollViewports();
+        SidebarRefresher.tick();
         if (sTicks % 150 == 0 && sTicks <= 150 * 12) WindowFitter.debugDump();
         for (Window window : Window.getWindows()) {
             if (!window.isShowing()) continue;

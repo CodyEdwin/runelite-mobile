@@ -105,8 +105,11 @@ public class RuneLoadingView extends View {
             String level = m.group(1), msg = m.group(2).trim();
             s = ("WARN".equals(level) || "ERROR".equals(level)) ? level + ": " + msg : msg;
         }
+        s = PATH.matcher(s).replaceAll("$1"); // /storage/.../sideloaded-plugins/foo.jar -> foo.jar
         return s.isEmpty() ? null : s;
     }
+
+    private static final java.util.regex.Pattern PATH = java.util.regex.Pattern.compile("(?:/[^\\s/:]+)+/([^\\s/:]+)");
 
     @Override
     protected void onDraw(Canvas c) {

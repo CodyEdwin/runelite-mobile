@@ -30,7 +30,9 @@ public final class AndroidRuneLite {
         // and only repaints damaged areas; on the cacio screen that lost sidebar/panel contents.
         if (System.getProperty("swing.bufferPerWindow") == null) System.setProperty("swing.bufferPerWindow", "false");
         javax.swing.SwingUtilities.invokeAndWait(LockingRepaintManager::install);
+        PaintRedirect.install();
         WindowFitter.install();
+        SidebarRefresher.install();
         RepaintPump.install();
         FpsLog.install();
         InputFocus.install();
