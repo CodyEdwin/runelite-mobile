@@ -20,6 +20,8 @@ final class LockingRepaintManager extends RepaintManager {
         }
     }
 
+    private static int sSlowLogs;
+
     static void install() {
         if (LOCK == null) return;
         RepaintManager.setCurrentManager(new LockingRepaintManager());
@@ -27,8 +29,15 @@ final class LockingRepaintManager extends RepaintManager {
 
     @Override
     public void paintDirtyRegions() {
+        long t0 = System.nanoTime();
         synchronized (LOCK) {
+            long t1 = System.nanoTime();
             super.paintDirtyRegions();
+            long held = System.nanoTime() - t1;
+            if (StallProfiler.ENABLED && held > 8_000_000L && sSlowLogs < 300) {
+                sSlowLogs++;
+                System.out.printf("StallProfiler: Swing paint held SCREEN_LOCK %.1f ms (waited %.1f ms)%n", held / 1e6, (t1 - t0) / 1e6);
+            }
         }
     }
 }

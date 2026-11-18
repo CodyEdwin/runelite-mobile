@@ -35,6 +35,7 @@ public final class AndroidRuneLite {
         SidebarRefresher.install();
         RepaintPump.install();
         FpsLog.install();
+        StallProfiler.install();
         InputFocus.install();
         javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
         javax.swing.SwingUtilities.invokeLater(GpuMode::install);
