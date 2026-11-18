@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static JavaVM* dalvikJavaVMPtr;
 
@@ -194,6 +195,28 @@ JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCDesktopPeer_openUri(JN
     (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_MainActivity, method_OpenLink, (*dalvikEnv)->NewStringUTF(dalvikEnv, stringChars));
     (*env)->ReleaseStringUTFChars(env, uri, stringChars);
     if(detachable) (*dalvikJavaVMPtr)->DetachCurrentThread(dalvikJavaVMPtr);
+}
+
+// Java 17 caciocavallo (com.github.caciocavallosilano) uses a different package name than the
+// Java 8 build above. Without these exports java.awt.Desktop#browse/open could never reach the
+// launcher (links, "Add Jagex Account").
+JNIEXPORT void JNICALL Java_com_github_caciocavallosilano_cacio_ctc_CTCDesktopPeer_openUri(JNIEnv *env, jclass clazz, jstring uri) {
+    Java_net_java_openjdk_cacio_ctc_CTCDesktopPeer_openUri(env, clazz, uri);
+}
+
+JNIEXPORT void JNICALL Java_com_github_caciocavallosilano_cacio_ctc_CTCDesktopPeer_openFile(JNIEnv *env, jclass clazz, jstring filePath) {
+    // MainActivity#openLink only treats "file:" URIs as paths.
+    const char* pathChars = (*env)->GetStringUTFChars(env, filePath, NULL);
+    if (pathChars == NULL) return;
+    size_t length = strlen(pathChars) + sizeof("file://");
+    char* uriChars = malloc(length);
+    if (uriChars != NULL) {
+        snprintf(uriChars, length, "file://%s", pathChars);
+        jstring uri = (*env)->NewStringUTF(env, uriChars);
+        free(uriChars);
+        if (uri != NULL) Java_net_java_openjdk_cacio_ctc_CTCDesktopPeer_openUri(env, clazz, uri);
+    }
+    (*env)->ReleaseStringUTFChars(env, filePath, pathChars);
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_AWTInputBridge_nativeClipboardReceived(JNIEnv *env, jclass clazz, jstring clipboardData, jstring clipboardDataMime) {
