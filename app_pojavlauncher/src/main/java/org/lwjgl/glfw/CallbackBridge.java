@@ -1,7 +1,6 @@
 package org.lwjgl.glfw;
 
 import net.kdt.pojavlaunch.*;
-import net.kdt.pojavlaunch.customcontrols.gamepad.direct.DirectGamepadEnableHandler;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 
 import android.content.*;
@@ -24,8 +23,6 @@ public class CallbackBridge {
     public static final Choreographer sChoreographer = Choreographer.getInstance();
     private static boolean isGrabbing = false;
     private static final ArrayList<GrabListener> grabListeners = new ArrayList<>();
-    // Use a weak reference here to avoid possibly statically referencing a Context.
-    private static @Nullable WeakReference<DirectGamepadEnableHandler> sDirectGamepadEnableHandler;
     
     public static final int CLIPBOARD_COPY = 2000;
     public static final int CLIPBOARD_PASTE = 2001;
@@ -143,18 +140,18 @@ public class CallbackBridge {
     public static @Nullable String accessAndroidClipboard(int type, String copy) {
         switch (type) {
             case CLIPBOARD_COPY:
-                MainActivity.GLOBAL_CLIPBOARD.setPrimaryClip(ClipData.newPlainText("Copy", copy));
+                AwtHost.GLOBAL_CLIPBOARD.setPrimaryClip(ClipData.newPlainText("Copy", copy));
                 return null;
 
             case CLIPBOARD_PASTE:
-                if (MainActivity.GLOBAL_CLIPBOARD.hasPrimaryClip() && MainActivity.GLOBAL_CLIPBOARD.getPrimaryClipDescription().hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN)) {
-                    return MainActivity.GLOBAL_CLIPBOARD.getPrimaryClip().getItemAt(0).getText().toString();
+                if (AwtHost.GLOBAL_CLIPBOARD.hasPrimaryClip() && AwtHost.GLOBAL_CLIPBOARD.getPrimaryClipDescription().hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN)) {
+                    return AwtHost.GLOBAL_CLIPBOARD.getPrimaryClip().getItemAt(0).getText().toString();
                 } else {
                     return "";
                 }
 
             case CLIPBOARD_OPEN:
-                MainActivity.openLink(copy);
+                AwtHost.openLink(copy);
                 return null;
             default: return null;
         }
@@ -205,8 +202,6 @@ public class CallbackBridge {
     @Keep
     private static void onDirectInputEnable() {
         Log.i("CallbackBridge", "onDirectInputEnable()");
-        DirectGamepadEnableHandler enableHandler = Tools.getWeakReference(sDirectGamepadEnableHandler);
-        if(enableHandler != null) enableHandler.onDirectGamepadEnabled();
         sGamepadDirectInput = true;
     }
 
@@ -245,9 +240,6 @@ public class CallbackBridge {
         return axisByteBuffer.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
     }
 
-    public static void setDirectGamepadEnableHandler(DirectGamepadEnableHandler h) {
-        sDirectGamepadEnableHandler = new WeakReference<>(h);
-    }
     @Keep // Used to implement glfwGetWindowContentScale for imgui-java
     private static float getAndroidDPI(){
         DisplayMetrics metrics = new DisplayMetrics();

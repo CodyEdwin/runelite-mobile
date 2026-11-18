@@ -59,14 +59,14 @@ public final class RuneLiteUpdates {
             if (RuneLiteBootstrap.MODE_AUTO.equals(state.mode) || RuneLiteBootstrap.MODE_OFFICIAL.equals(state.mode)) {
                 try {
                     RuneLiteBootstrap.UpdateResult r = b.checkForUpdate((msg, pct) ->
-                            ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_MINECRAFT, pct, msg));
+                            ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_RUNELITE, pct, msg));
                     Log.i(TAG, r.message + (r.compat != null ? "\n" + r.compat : ""));
                     if (r.downloaded || (r.compat != null && !r.compat.isCompatible())) toast(activity, r.message);
                 } catch (IOException e) {
                     Log.w(TAG, "RuneLite update check failed", e);
                     toast(activity, "Couldn't check for RuneLite updates: " + e.getMessage());
                 } finally {
-                    ProgressLayout.clearProgress(ProgressLayout.DOWNLOAD_MINECRAFT);
+                    ProgressLayout.clearProgress(ProgressLayout.DOWNLOAD_RUNELITE);
                 }
             }
             RuneLiteBootstrap.LaunchPlan plan = b.planLaunch(bundled);
@@ -148,7 +148,7 @@ public final class RuneLiteUpdates {
             String message;
             try {
                 RuneLiteBootstrap.UpdateResult r = b.checkForUpdate((msg, pct) ->
-                        ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_MINECRAFT, pct, msg));
+                        ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_RUNELITE, pct, msg));
                 message = r.message;
                 if (r.compat != null) Log.i(TAG, r.compat.toString());
                 RuneLiteBootstrap.State s = b.loadState();
@@ -161,7 +161,7 @@ public final class RuneLiteUpdates {
                 Log.w(TAG, "RuneLite update check failed", e);
                 message = "RuneLite update check failed: " + e.getMessage();
             } finally {
-                ProgressLayout.clearProgress(ProgressLayout.DOWNLOAD_MINECRAFT);
+                ProgressLayout.clearProgress(ProgressLayout.DOWNLOAD_RUNELITE);
             }
             final String text = message;
             activity.runOnUiThread(() -> {

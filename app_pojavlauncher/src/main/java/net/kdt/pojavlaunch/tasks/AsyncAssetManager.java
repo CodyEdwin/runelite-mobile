@@ -66,10 +66,7 @@ public class AsyncAssetManager {
         ProgressLayout.setProgress(ProgressLayout.EXTRACT_SINGLE_FILES, 0);
         sExecutorService.execute(() -> {
             try {
-                Tools.copyAssetFile(ctx, "options.txt", Tools.DIR_GAME_NEW, false);
-                Tools.copyAssetFile(ctx, "default.json", Tools.CTRLMAP_PATH, false);
 
-                Tools.copyAssetFile(ctx, "launcher_profiles.json", Tools.DIR_GAME_NEW, false);
                 Tools.copyAssetFile(ctx,"resolv.conf",Tools.DIR_DATA, false);
             } catch (IOException e) {
                 Log.e("AsyncAssetManager", "Failed to unpack critical components !");
@@ -82,49 +79,14 @@ public class AsyncAssetManager {
         ProgressLayout.setProgress(ProgressLayout.EXTRACT_COMPONENTS, 0);
         sExecutorService.execute(() -> {
             try {
-                unpackComponent(ctx, "caciocavallo", false);
+                // RuneLite Mobile only ships the Java 17 AWT backend and the bundled client.
                 unpackComponent(ctx, "caciocavallo17", false);
-                // RuneLite Mobile: no LWJGL / Minecraft agents and installers any more.
-                unpackComponent(ctx, "security", true);
                 unpackComponent(ctx, "runelite", false);
             } catch (IOException e) {
                 Log.e("AsyncAssetManager", "Failed to unpack components !",e );
             }
             ProgressLayout.clearProgress(ProgressLayout.EXTRACT_COMPONENTS);
         });
-    }
-    // Piggybacks off of the java modules extracting later to use their version files for update checks
-    // This is indeed prone to breaking.
-    private static void unpackLwjglNatives(Context ctx) throws IOException {
-        AssetManager am = ctx.getAssets();
-        String rootDir = Tools.DIR_DATA;
-        String sArch = archAsStringAndroid(getDeviceArchitecture());
-
-        String[] lwjglVersions = {"3.3.3", "3.4.1"};
-        for (String lwjglVer : lwjglVersions) {
-            File versionFile = new File(Tools.DIR_GAME_HOME + String.format("/lwjgl3/%s/version", lwjglVer));
-            InputStream is = am.open("components/lwjgl3/" + lwjglVer + "/version");
-            String pathToLwjglNatives = String.format("lwjgl-%s-natives/", lwjglVer) + sArch;
-
-            boolean shouldUpdate = true;
-            if (versionFile.exists()) {
-                FileInputStream fis = new FileInputStream(versionFile);
-                String release1 = Tools.read(is);
-                String release2 = Tools.read(fis);
-                if (release1.equals(release2))
-                    shouldUpdate = false;
-            }
-
-            if (shouldUpdate) {
-                Log.i("UnpackLwjgl", lwjglVer + " was installed manually, or does not exist, unpacking new...");
-                String[] fileList = am.list("components/" + pathToLwjglNatives);
-                for (String fileName : fileList) {
-                    Tools.copyAssetFile(ctx, "components/" + pathToLwjglNatives + "/" + fileName, rootDir + "/" + pathToLwjglNatives, true);
-                }
-            } else {
-                Log.i("UnpackLwjgl", lwjglVer + " is up-to-date with the launcher, continuing...");
-            }
-        }
     }
 
     private static void unpackComponent(Context ctx, String component, boolean privateDirectory) throws IOException {

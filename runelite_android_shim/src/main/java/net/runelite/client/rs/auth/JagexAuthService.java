@@ -158,7 +158,7 @@ public class JagexAuthService {
       }
    }
 
-   /** Scheme handled by the Android launcher (MainActivity#openLink). */
+   /** Scheme handled by the Android launcher (AwtHost#openLink). */
    private static final String ANDROID_AUTH_SCHEME = "runelite-jagexauth";
    private static final int ANDROID_AUTH_TIMEOUT_MS = 15 * 60 * 1000;
 

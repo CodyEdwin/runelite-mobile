@@ -101,7 +101,7 @@ public class JagexLoginActivity extends Activity {
     private String mLoginUrl;
     private volatile boolean mResultSent;
 
-    /** Called from MainActivity#openLink for runelite-jagexauth://login?port=..&secret=.. */
+    /** Called from AwtHost#openLink for runelite-jagexauth://login?port=..&secret=.. */
     public static void start(Context context, Uri uri) {
         String port = uri.getQueryParameter(EXTRA_PORT);
         String secret = uri.getQueryParameter(EXTRA_SECRET);

@@ -4,13 +4,11 @@ import static net.kdt.pojavlaunch.Architecture.ARCH_X86;
 import static net.kdt.pojavlaunch.Architecture.archAsStringAndroid;
 import static net.kdt.pojavlaunch.Architecture.getDeviceArchitecture;
 import static net.kdt.pojavlaunch.Architecture.is64BitsDevice;
-import static net.kdt.pojavlaunch.Tools.LOCAL_RENDERER;
 import static net.kdt.pojavlaunch.Tools.NATIVE_LIB_DIR;
 import static net.kdt.pojavlaunch.Tools.currentDisplayMetrics;
 import static net.kdt.pojavlaunch.Tools.shareLog;
 import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_DUMP_SHADERS;
 import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_VSYNC_IN_ZINK;
-import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_ZINK_PREFER_SYSTEM_DRIVER;
 
 import android.app.*;
 import android.content.*;
@@ -25,12 +23,9 @@ import com.oracle.dalvik.*;
 import java.io.*;
 import java.util.*;
 import net.kdt.pojavlaunch.*;
-import net.kdt.pojavlaunch.extra.ExtraConstants;
-import net.kdt.pojavlaunch.extra.ExtraCore;
 import net.kdt.pojavlaunch.lifecycle.LifecycleAwareAlertDialog;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
 import net.kdt.pojavlaunch.multirt.Runtime;
-import net.kdt.pojavlaunch.plugins.FFmpegPlugin;
 import net.kdt.pojavlaunch.prefs.*;
 
 import org.lwjgl.glfw.*;
@@ -158,9 +153,6 @@ public class JREUtils {
 
         String libName = is64BitsDevice() ? "lib64" : "lib";
         StringBuilder ldLibraryPath = new StringBuilder();
-        if(FFmpegPlugin.isAvailable) {
-            ldLibraryPath.append(FFmpegPlugin.libraryPath).append(":");
-        }
         ldLibraryPath.append(jreHome)
                 .append("/").append(Tools.DIRNAME_HOME_JRE)
                 .append("/jli:").append(jreHome).append("/").append(Tools.DIRNAME_HOME_JRE)
@@ -200,67 +192,17 @@ public class JREUtils {
 
 
         // The OPEN GL version is changed according
-        envMap.put("LIBGL_ES", (String) ExtraCore.getValue(ExtraConstants.OPEN_GL_VERSION));
 
         envMap.put("FORCE_VSYNC", String.valueOf(LauncherPreferences.PREF_FORCE_VSYNC));
 
-        envMap.put("MESA_GLSL_CACHE_DIR", Tools.DIR_CACHE.getAbsolutePath());
-        envMap.put("force_glsl_extensions_warn", "true");
-        envMap.put("allow_higher_compat_version", "true");
-        envMap.put("allow_glsl_extension_directive_midshader", "true");
-        envMap.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
-        envMap.put("VTEST_SOCKET_NAME", new File(Tools.DIR_CACHE, ".virgl_test").getAbsolutePath());
 
         envMap.put("LD_LIBRARY_PATH", LD_LIBRARY_PATH);
         envMap.put("PATH", jreHome + "/bin:" + Os.getenv("PATH"));
-        if(FFmpegPlugin.isAvailable) {
-            envMap.put("POJAV_FFMPEG_PATH", FFmpegPlugin.executablePath);
-        }
 
-        if(LOCAL_RENDERER != null) {
-            envMap.put("XDAETHERIUM_RENDERER", LOCAL_RENDERER);
-            if(LOCAL_RENDERER.equals("opengles3_ltw")) {
-                envMap.put("LIBGL_ES", "3");
-                envMap.put("POJAVEXEC_EGL","libltw.so"); // Use ANGLE EGL
-            }
-            if(LOCAL_RENDERER.equals("opengles_mobileglues")){
-                envMap.put("MG_DIR_PATH", Tools.DIR_DATA + "/MobileGlues");
-                envMap.put("POJAVEXEC_EGL","libmobileglues.so");
-            }
-            if (LOCAL_RENDERER.equals("opengles3_desktopgl_zink_kopper")){
-                envMap.put("POJAVEXEC_EGL","libEGL_mesa.so"); // Use Mesa EGL
-                if (Tools.shouldUseUBWC()) envMap.put("FD_DEV_FEATURES", "enable_tp_ubwc_flag_hint=1"); // Turnip fix for OneUI rendering issues
-            }
-            if (LOCAL_RENDERER.toLowerCase().contains("zink")){
-                // This is sketch but it fixes a lot of things, if it causes problems we can just undo it.
-                envMap.put("MESA_GL_VERSION_OVERRIDE","4.6COMPAT");
-                envMap.put("MESA_GLSL_VERSION_OVERRIDE","460");
-            }
-        }
         if(LauncherPreferences.PREF_BIG_CORE_AFFINITY) envMap.put("POJAV_BIG_CORE_AFFINITY", "1");
         envMap.put("AWTSTUB_WIDTH", Integer.toString(CallbackBridge.windowWidth > 0 ? CallbackBridge.windowWidth : CallbackBridge.physicalWidth));
         envMap.put("AWTSTUB_HEIGHT", Integer.toString(CallbackBridge.windowHeight > 0 ? CallbackBridge.windowHeight : CallbackBridge.physicalHeight));
 
-        GLInfoUtils.GLInfo info = GLInfoUtils.getGlInfo();
-        if(!envMap.containsKey("LIBGL_ES") && LOCAL_RENDERER != null) {
-            int glesMajor = info.glesMajorVersion;
-            Log.i("glesDetect","GLES version detected: "+glesMajor);
-
-            if (glesMajor < 3) {
-                //fallback to 2 since it's the minimum for the entire app
-                envMap.put("LIBGL_ES","2");
-            } else if (LOCAL_RENDERER.startsWith("opengles")) {
-                envMap.put("LIBGL_ES", LOCAL_RENDERER.replace("opengles", "").replace("_5", ""));
-            } else {
-                // TODO if can: other backends such as Vulkan.
-                // Sure, they should provide GLES 3 support.
-                envMap.put("LIBGL_ES", "3");
-            }
-        }
-
-        if(info.isAdreno() && !PREF_ZINK_PREFER_SYSTEM_DRIVER) {
-            envMap.put("POJAV_LOAD_TURNIP", "1");
-        }
 
         readCustomEnv(envMap); // Must be last so it overrides anything the user sets for obvious reasons.
 
@@ -295,23 +237,14 @@ public class JREUtils {
             reader.close();
         }
     }
+    /** Launch the JVM (RuneLite) in this process. */
     public static void launchJavaVM(final AppCompatActivity activity, final Runtime runtime, File gameDirectory, final List<String> JVMArgs, final String userArgsString) throws Throwable {
-        launchJavaVM(activity, runtime, gameDirectory, JVMArgs, userArgsString, true);
-    }
-
-    /**
-     * Launch the JVM.
-     * @param launcherHooks when false, skips the Minecraft-oriented LWJGL shims and the methods
-     *                      injector agent so a non-Minecraft application (RuneLite) can be hosted.
-     */
-    public static void launchJavaVM(final AppCompatActivity activity, final Runtime runtime, File gameDirectory, final List<String> JVMArgs, final String userArgsString, boolean launcherHooks) throws Throwable {
         String runtimeHome = MultiRTUtils.getRuntimeHome(runtime.name).getAbsolutePath();
 
         JREUtils.relocateLibPath(runtime, runtimeHome);
 
         setJavaEnvironment(activity, runtimeHome);
 
-        final String graphicsLib = launcherHooks ? loadGraphicsLibrary() : null;
         List<String> userArgs = getJavaArgs(activity, runtimeHome, userArgsString);
 
         //Remove arguments that can interfere with the good working of the launcher
@@ -332,23 +265,9 @@ public class JREUtils {
         //Add automatically generated args
         userArgs.add("-Xms" + LauncherPreferences.PREF_RAM_ALLOCATION + "M");
         userArgs.add("-Xmx" + LauncherPreferences.PREF_RAM_ALLOCATION + "M");
-        if(launcherHooks) {
-            if(LOCAL_RENDERER != null) userArgs.add("-Dorg.lwjgl.opengl.libname=" + graphicsLib);
-
-            // Force LWJGL to use the Freetype library intended for it, instead of using the one
-            // that we ship with Java (since it may be older than what's needed)
-            userArgs.add("-Dorg.lwjgl.freetype.libname="+ Tools.lwjglNativesDir +"/libfreetype.so");
-            // Our spirv-cross is compiled shared, so it gets named shared.
-            userArgs.add("-Dorg.lwjgl.spvc.libname=spirv-cross-c-shared");
-
-            // We don't have jemalloc for our LWJGL so set the allocator to system to avoid error logs
-            userArgs.add("-Dorg.lwjgl.system.allocator=system");
-        }
 
         // Some phones are not using the right number of cores, fix that
         userArgs.add("-XX:ActiveProcessorCount=" + java.lang.Runtime.getRuntime().availableProcessors());
-        // Adds/changes methods for compatibility
-        if(launcherHooks) userArgs.add("-javaagent:"+new File(Tools.DIR_DATA,"methods_injector_agent/methods_injector_agent.jar").getAbsolutePath());
 
         userArgs.addAll(JVMArgs);
         activity.runOnUiThread(() -> Toast.makeText(activity, activity.getString(R.string.autoram_info_msg,LauncherPreferences.PREF_RAM_ALLOCATION), Toast.LENGTH_SHORT).show());
@@ -391,30 +310,13 @@ public class JREUtils {
                 "-Duser.language=" + System.getProperty("user.language"),
                 "-Dos.name=Linux",
                 "-Dos.version=Android-" + Build.VERSION.RELEASE,
-                "-Dpojav.path.minecraft=" + Tools.DIR_GAME_NEW,
-                "-Dpojav.path.private.account=" + Tools.DIR_ACCOUNT_NEW,
                 "-Duser.timezone=" + TimeZone.getDefault().getID(),
 
-                "-Dorg.lwjgl.vulkan.libname=libvulkan.so",
-                //LWJGL 3 DEBUG FLAGS
-                //"-Dorg.lwjgl.util.Debug=true",
-                //"-Dorg.lwjgl.util.DebugFunctions=true",
-                //"-Dorg.lwjgl.util.DebugLoader=true",
-                // GLFW Stub width height
-                "-Dglfwstub.windowWidth=" + Tools.getDisplayFriendlyRes(currentDisplayMetrics.widthPixels, LauncherPreferences.PREF_SCALE_FACTOR),
-                "-Dglfwstub.windowHeight=" + Tools.getDisplayFriendlyRes(currentDisplayMetrics.heightPixels, LauncherPreferences.PREF_SCALE_FACTOR),
-                "-Dglfwstub.initEgl=false",
                 "-Dext.net.resolvPath=" +resolvFile,
                 "-Dlog4j2.formatMsgNoLookups=true", //Log4j RCE mitigation
 
-                "-Dnet.minecraft.clientmodname=" + Tools.APP_NAME,
-                "-Dfml.earlyprogresswindow=false", //Forge 1.14+ workaround
-                "-Dloader.disable_forked_guis=true",
                 "-Djdk.lang.Process.launchMechanism=FORK" // Default is POSIX_SPAWN which requires starting jspawnhelper, which doesn't work on Android
         ));
-        if(LauncherPreferences.PREF_ARC_CAPES) {
-            overridableArguments.add("-javaagent:"+new File(Tools.DIR_DATA,"arc_dns_injector/arc_dns_injector.jar").getAbsolutePath()+"=23.95.137.176");
-        }
         List<String> additionalArguments = new ArrayList<>();
         for(String arg : overridableArguments) {
             String strippedArg = arg.substring(0,arg.indexOf('='));
@@ -491,37 +393,6 @@ public class JREUtils {
         return parsedArguments;
     }
 
-    /**
-     * Open the render library in accordance to the settings.
-     * It will fallback if it fails to load the library.
-     * @return The name of the loaded library
-     */
-    public static String loadGraphicsLibrary(){
-        if(LOCAL_RENDERER == null) return null;
-        String renderLibrary;
-        switch (LOCAL_RENDERER){
-            case "opengles2":
-            case "opengles2_5":
-            case "opengles3":
-                renderLibrary = "libng_gl4es.so"; break;
-            case "vulkan_zink": renderLibrary = "libOSMesa.so"; break;
-            case "opengles_mobileglues": renderLibrary = "libmobileglues.so"; break;
-            case "opengles3_desktopgl_zink_kopper": renderLibrary = "libglxshim.so"; break;
-            case "opengles3_ltw" : renderLibrary = "libltw.so"; break;
-            default:
-                Log.w("RENDER_LIBRARY", "No renderer selected, defaulting to opengles2");
-                renderLibrary = "libng_gl4es.so";
-                break;
-        }
-
-        if (!dlopen(renderLibrary) && !dlopen(findInLdLibPath(renderLibrary))) {
-            Log.e("RENDER_LIBRARY","Failed to load renderer " + renderLibrary + ". Falling back to Krypton Wrapper");
-            LOCAL_RENDERER = "opengles2";
-            renderLibrary = "libng_gl4es.so";
-            dlopen(NATIVE_LIB_DIR + "/libng_gl4es.so");
-        }
-        return renderLibrary;
-    }
 
     /**
      * Remove the argument from the list, if it exists

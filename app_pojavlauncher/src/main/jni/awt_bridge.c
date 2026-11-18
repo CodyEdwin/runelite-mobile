@@ -19,7 +19,7 @@ jmethodID method_GetRGB;
 jclass class_CTCAndroidInput;
 jmethodID method_ReceiveInput;
 
-jclass class_MainActivity;
+jclass class_AwtHost;
 jmethodID method_OpenLink;
 jmethodID method_OpenPath;
 jmethodID method_QuerySystemClipboard;
@@ -43,11 +43,11 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         dalvikJavaVMPtr = vm;
         JNIEnv *env = NULL;
         (*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_4);
-        class_MainActivity = (*env)->NewGlobalRef(env,(*env)->FindClass(env, "net/kdt/pojavlaunch/MainActivity"));
-        method_OpenLink= (*env)->GetStaticMethodID(env, class_MainActivity, "openLink", "(Ljava/lang/String;)V");
-        method_OpenPath= (*env)->GetStaticMethodID(env, class_MainActivity, "openLink", "(Ljava/lang/String;)V");
-        method_QuerySystemClipboard = (*env)->GetStaticMethodID(env, class_MainActivity, "querySystemClipboard", "()V");
-        method_PutClipboardData = (*env)->GetStaticMethodID(env, class_MainActivity, "putClipboardData", "(Ljava/lang/String;Ljava/lang/String;)V");
+        class_AwtHost = (*env)->NewGlobalRef(env,(*env)->FindClass(env, "net/kdt/pojavlaunch/AwtHost"));
+        method_OpenLink= (*env)->GetStaticMethodID(env, class_AwtHost, "openLink", "(Ljava/lang/String;)V");
+        method_OpenPath= (*env)->GetStaticMethodID(env, class_AwtHost, "openLink", "(Ljava/lang/String;)V");
+        method_QuerySystemClipboard = (*env)->GetStaticMethodID(env, class_AwtHost, "querySystemClipboard", "()V");
+        method_PutClipboardData = (*env)->GetStaticMethodID(env, class_AwtHost, "putClipboardData", "(Ljava/lang/String;Ljava/lang/String;)V");
     } else if (dalvikJavaVMPtr != vm) {
         runtimeJavaVMPtr = vm;
     }
@@ -224,7 +224,7 @@ JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCClipboard_nQuerySystem
         class_CTCClipboard = (*env)->NewGlobalRef(env, clazz);
         method_SystemClipboardDataReceived = (*env)->GetStaticMethodID(env, clazz, "systemClipboardDataReceived", "(Ljava/lang/String;Ljava/lang/String;)V");
     }
-    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_MainActivity, method_QuerySystemClipboard);
+    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_AwtHost, method_QuerySystemClipboard);
     if(detachable) (*dalvikJavaVMPtr)->DetachCurrentThread(dalvikJavaVMPtr);
 }
 
@@ -237,7 +237,7 @@ JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCClipboard_nPutClipboar
 
     const char* dataChars = (*env)->GetStringUTFChars(env, clipboardData, NULL);
     const char* mimeChars = (*env)->GetStringUTFChars(env, clipboardDataMime, NULL);
-    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_MainActivity, method_PutClipboardData,
+    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_AwtHost, method_PutClipboardData,
                                        (*dalvikEnv)->NewStringUTF(dalvikEnv, dataChars),
                                        (*dalvikEnv)->NewStringUTF(dalvikEnv, mimeChars));
     (*env)->ReleaseStringUTFChars(env, clipboardData, dataChars);
@@ -260,7 +260,7 @@ JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCDesktopPeer_openFile(J
         detachable = 1;
     }
     const char* stringChars = (*env)->GetStringUTFChars(env, filePath, NULL);
-    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_MainActivity, method_OpenPath, (*dalvikEnv)->NewStringUTF(dalvikEnv, stringChars));
+    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_AwtHost, method_OpenPath, (*dalvikEnv)->NewStringUTF(dalvikEnv, stringChars));
     (*env)->ReleaseStringUTFChars(env, filePath, stringChars);
     if(detachable) (*dalvikJavaVMPtr)->DetachCurrentThread(dalvikJavaVMPtr);
 }
@@ -272,7 +272,7 @@ JNIEXPORT void JNICALL Java_net_java_openjdk_cacio_ctc_CTCDesktopPeer_openUri(JN
         detachable = 1;
     }
     const char* stringChars = (*env)->GetStringUTFChars(env, uri, NULL);
-    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_MainActivity, method_OpenLink, (*dalvikEnv)->NewStringUTF(dalvikEnv, stringChars));
+    (*dalvikEnv)->CallStaticVoidMethod(dalvikEnv, class_AwtHost, method_OpenLink, (*dalvikEnv)->NewStringUTF(dalvikEnv, stringChars));
     (*env)->ReleaseStringUTFChars(env, uri, stringChars);
     if(detachable) (*dalvikJavaVMPtr)->DetachCurrentThread(dalvikJavaVMPtr);
 }
@@ -285,7 +285,7 @@ JNIEXPORT void JNICALL Java_com_github_caciocavallosilano_cacio_ctc_CTCDesktopPe
 }
 
 JNIEXPORT void JNICALL Java_com_github_caciocavallosilano_cacio_ctc_CTCDesktopPeer_openFile(JNIEnv *env, jclass clazz, jstring filePath) {
-    // MainActivity#openLink only treats "file:" URIs as paths.
+    // AwtHost#openLink only treats "file:" URIs as paths.
     const char* pathChars = (*env)->GetStringUTFChars(env, filePath, NULL);
     if (pathChars == NULL) return;
     size_t length = strlen(pathChars) + sizeof("file://");

@@ -149,6 +149,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
         right.addView(action("Settings (memory)", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
         right.addView(action("Share log file", v -> Tools.shareLog(this)));
+        right.addView(action("About RuneLite Mobile", v -> showAbout()));
 
         LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
         leftLp.rightMargin = dp(24);
@@ -248,6 +249,36 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 Tools.showError(this, t);
             }
         }, "RuneLiteLauncher").start();
+    }
+
+    private void showAbout() {
+        String appVersion = "?";
+        try {
+            appVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+        }
+        String html = "<b>RuneLite Mobile</b> " + appVersion + "<br>"
+                + "RuneLite " + RuneLiteUpdates.bundledVersion(this) + " (bundled) on a Java 17 runtime, "
+                + "drawn through a caciocavallo AWT backend.<br><br>"
+                + "<b>Built on</b><br>"
+                + "&#8226; <a href=\"https://github.com/runelite/runelite\">RuneLite</a> (BSD 2-Clause)<br>"
+                + "&#8226; <a href=\"https://github.com/PojavLauncherTeam/PojavLauncher\">PojavLauncher</a> (LGPL-3.0): JVM launch and input bridge<br>"
+                + "&#8226; <a href=\"https://github.com/PojavLauncherTeam/caciocavallo\">Caciocavallo</a> and OpenJDK (GPLv2 + Classpath Exception)<br>"
+                + "&#8226; Apache Commons, Gson, JNA, xz, bytehook<br><br>"
+                + "RuneLite Mobile is an unofficial port. It is not affiliated with or endorsed by Jagex Ltd or the RuneLite project. "
+                + "Old School RuneScape is a trademark of Jagex Ltd.";
+        TextView text = new TextView(this);
+        text.setText(androidx.core.text.HtmlCompat.fromHtml(html, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY));
+        text.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+        text.setPadding(dp(24), dp(16), dp(24), 0);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(text);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("About")
+                .setIcon(R.drawable.runelite_mobile_logo)
+                .setView(scroll)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
     }
 
     private void importPlugin() {
