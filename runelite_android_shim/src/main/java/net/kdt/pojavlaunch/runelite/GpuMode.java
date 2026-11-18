@@ -54,6 +54,7 @@ final class GpuMode {
                 if (STRETCHED.equals(n)) gpu = p; else if (HD.equals(n)) hd = p;
             }
             if (!started || gpu == null) return; // wait for RuneLite's own startPlugins()
+            if (hd == null) autoInstallHd();
             boolean hdActive = hd != null && pm.isPluginActive(hd);
             if (hdActive) {
                 if (!hdWasActive) System.out.println("GpuMode: 117 HD is active, stock GPU plugin stays off");
@@ -80,6 +81,26 @@ final class GpuMode {
             stockStarted = true;
             System.err.println("GpuMode: " + t);
         }
+    }
+
+    private static boolean autoChecked;
+
+    /**
+     * GPU mode installs 117 HD once through RuneLite's own Plugin Hub install (signature- and
+     * hash-checked download into ~/.runelite/plugins, same as pressing Install), because the hub
+     * list didn't offer it on the phone. Remembered in the profile, so uninstalling it sticks.
+     */
+    private static void autoInstallHd() {
+        if (autoChecked) return;
+        autoChecked = true;
+        net.runelite.client.config.ConfigManager cm = RuneLite.getInjector().getInstance(net.runelite.client.config.ConfigManager.class);
+        if ("true".equals(cm.getConfiguration("runelitemobile", "hdAutoInstalled"))) return;
+        cm.setConfiguration("runelitemobile", "hdAutoInstalled", "true");
+        String hub = cm.getConfiguration("runelite", "externalPlugins");
+        if (hub != null && java.util.Arrays.asList(hub.split(",")).contains("117hd")) return;
+        System.out.println("GpuMode: installing 117 HD from the Plugin Hub");
+        RuneLite.getInjector().getInstance(net.runelite.client.externalplugins.ExternalPluginManager.class).install("117hd");
+        t0 = System.currentTimeMillis(); // give the ~10 MB download time before falling back
     }
 
     /** 117 HD is installed from the Plugin Hub and not disabled in the profile (hub jars load late). */
