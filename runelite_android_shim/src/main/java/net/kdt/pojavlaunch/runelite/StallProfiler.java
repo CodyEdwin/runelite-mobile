@@ -13,10 +13,10 @@ import net.runelite.client.eventbus.Subscribe;
  * Diagnostics for the periodic frame skip: samples the Client thread's stack every 10 ms and, when
  * a frame takes much longer than usual, logs where the Client thread was during that frame (top
  * frames and first plugin frame) and how long after the last game tick it happened.
- * Disable with -Drunelite.android.stallProfiler=false.
+ * Off by default; enable with -Drunelite.android.stallProfiler=true.
  */
 public final class StallProfiler {
-    static final boolean ENABLED = !"false".equals(System.getProperty("runelite.android.stallProfiler"));
+    static final boolean ENABLED = Boolean.getBoolean("runelite.android.stallProfiler");
     private static final ArrayDeque<long[]> times = new ArrayDeque<>();
     private static final ArrayDeque<String[]> stacks = new ArrayDeque<>();
     private static volatile Thread client;
