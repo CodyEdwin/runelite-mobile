@@ -75,6 +75,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     private boolean mRuneLite;
     private String mRequestedRuntime;
     private AWTCanvasView mTextureView;
+    private net.kdt.pojavlaunch.runelitemobile.RuneLoadingView mLoadingView;
+    private Logger.eventLogListener mLoadingLogListener;
     private LoggerView mLoggerView;
     private TouchCharInput mTouchCharInput;
 
@@ -149,6 +151,12 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         mLoggerView = findViewById(R.id.launcherLoggerView);
         mMousePointerImageView = findViewById(R.id.main_mouse_pointer);
         mTextureView = findViewById(R.id.installmod_surfaceview);
+        if (mRuneLite) {
+            mLoadingView = net.kdt.pojavlaunch.runelitemobile.RuneLoadingView.attach(this, "Starting Java…", 0.45f);
+            final net.kdt.pojavlaunch.runelitemobile.RuneLoadingView lv = mLoadingView;
+            mLoadingLogListener = lv::addLog; // JVM stdout/stderr (RuneLite's logback output) as it arrives
+            Logger.addLogListener(mLoadingLogListener);
+        }
         mGestureDetector = new GestureDetector(this, new SingleTapConfirm());
         mTouchPad.setFocusable(false);
         mTouchPad.setVisibility(View.GONE);
@@ -292,6 +300,41 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     }
 
 
+    private void loadingStatus(String status, float progress) {
+        net.kdt.pojavlaunch.runelitemobile.RuneLoadingView v = mLoadingView;
+        if (v != null) v.setStatus(status, progress);
+    }
+
+    private void dismissLoading() {
+        net.kdt.pojavlaunch.runelitemobile.RuneLoadingView v = mLoadingView;
+        mLoadingView = null;
+        Logger.eventLogListener l = mLoadingLogListener;
+        mLoadingLogListener = null;
+        if (l != null) Logger.removeLogListener(l);
+        if (v != null) v.dismiss();
+    }
+
+    /** Fades the loading screen out once the shim reports RuneLite's main window (or after 3 minutes). */
+    private void watchRuneLiteReady(File readyFile) {
+        Thread t = new Thread(() -> {
+            long begin = System.currentTimeMillis();
+            float p = 0.7f;
+            while (mLoadingView != null && System.currentTimeMillis() - begin < 180_000) {
+                if (readyFile.exists()) {
+                    loadingStatus("Ready", 1f);
+                    try { Thread.sleep(350); } catch (InterruptedException ignored) { }
+                    break;
+                }
+                p += (0.97f - p) * 0.01f; // creep while RuneLite loads (its own progress is not exposed)
+                loadingStatus("Launching RuneLite…", p);
+                try { Thread.sleep(250); } catch (InterruptedException e) { break; }
+            }
+            dismissLoading();
+        }, "RuneLiteReadyWatch");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private void startRuneLite() {
         new Thread(() -> {
             try {
@@ -379,6 +422,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     args.add("--profile");
                     args.add(profile);
                 }
+                loadingStatus("Loading plugins…", 0.55f);
                 try {
                     Tools.syncRuneLiteSideloadedPlugins(this,
                             androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
@@ -386,8 +430,15 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 } catch (Exception e) {
                     Log.w("JavaGUILauncher", "Unable to sync sideloaded plugins", e);
                 }
+                File readyFile = new File(getCacheDir(), "runelite-window-ready");
+                //noinspection ResultOfMethodCallIgnored
+                readyFile.delete();
+                args.add(0, "-Drunelite.android.readyFile=" + readyFile.getAbsolutePath());
+                loadingStatus("Launching RuneLite…", 0.7f);
+                watchRuneLiteReady(readyFile);
                 launchJavaRuntime(runtime, null, args);
             } catch (Throwable t) {
+                dismissLoading();
                 Tools.showError(this, t, true);
             }
         }, "JREMainThread").start();
@@ -397,6 +448,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
 
     private void finalErrorDialog(CharSequence msg) {
+        dismissLoading();
         runOnUiThread(()-> new AlertDialog.Builder(this)
                 .setTitle(R.string.global_error)
                 .setMessage(msg)
@@ -501,6 +553,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     }
 
     private float mScrollRemainder;
+    private int mLastMouseX = Integer.MIN_VALUE, mLastMouseY = Integer.MIN_VALUE;
 
     private void sendHardwareMouseEvent(MotionEvent event) {
         // Map through the texture view's own coordinate space. getRawX() minus
@@ -512,8 +565,17 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             int[] decorLocation = new int[2];
             decor.getLocationOnScreen(decorLocation);
             // event.getX/Y are relative to the window that dispatched it (the decor view).
-            local[0] = event.getX() + decorLocation[0] - mMouseViewLocation[0];
-            local[1] = event.getY() + decorLocation[1] - mMouseViewLocation[1];
+            float dx = decorLocation[0] - mMouseViewLocation[0], dy = decorLocation[1] - mMouseViewLocation[1];
+            local[0] = event.getX() + dx;
+            local[1] = event.getY() + dy;
+            // Android batches mouse motion per frame: replay the batched samples too, so a
+            // middle-button camera drag moves in small even steps instead of one jump per frame.
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_HOVER_MOVE) {
+                for (int h = 0; h < event.getHistorySize(); h++) {
+                    sendLocalMousePosition(event.getHistoricalX(h) + dx, event.getHistoricalY(h) + dy);
+                }
+            }
         }
         sendLocalMousePosition(local[0], local[1]);
 
@@ -676,7 +738,11 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     private void sendLocalMousePosition(float x, float y) {
         // Use the exact inverse of the transform used to display the AWT screen.
         mTextureView.viewToCanvas(x, y, mCanvasPoint);
-        AWTInputBridge.sendMousePos((int) mCanvasPoint.x, (int) mCanvasPoint.y);
+        int cx = Math.round(mCanvasPoint.x), cy = Math.round(mCanvasPoint.y);
+        if (cx == mLastMouseX && cy == mLastMouseY) return; // no duplicate MOUSE_MOVED/DRAGGED
+        mLastMouseX = cx;
+        mLastMouseY = cy;
+        AWTInputBridge.sendMousePos(cx, cy);
     }
 
     /**

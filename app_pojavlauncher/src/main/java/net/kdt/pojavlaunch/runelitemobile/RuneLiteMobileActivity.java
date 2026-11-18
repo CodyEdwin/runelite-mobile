@@ -233,22 +233,46 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         play.setEnabled(false);
         Object item = profileSpinner.getSelectedItem();
         String profile = item instanceof RuneLiteProfiles.Profile ? ((RuneLiteProfiles.Profile) item).name : null;
-        status.setText("Preparing RuneLite…");
+        status.setText("");
+        final RuneLoadingView loading = RuneLoadingView.attach(this, "Checking for updates…", 0.1f);
+        loadingView = loading;
         new Thread(() -> {
             try {
                 // First start: wait for the bundled components (cacio, shim, RuneLite) to unpack.
+                if (ProgressKeeper.hasOngoingTasks()) loading.setStatus("Unpacking RuneLite…", 0.05f);
                 while (ProgressKeeper.hasOngoingTasks()) Thread.sleep(200);
+                loading.setStatus("Checking for updates…", 0.2f);
                 Tools.startRuneLite(this, profile);
-                runOnUiThread(() -> status.setText(""));
+                loading.setStatus("Starting Java…", 0.4f);
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     status.setText("");
                     launching = false;
                     play.setEnabled(true);
+                    dismissLoading();
                 });
                 Tools.showError(this, t);
             }
         }, "RuneLiteLauncher").start();
+    }
+
+    private RuneLoadingView loadingView;
+
+    private void dismissLoading() {
+        RuneLoadingView v = loadingView;
+        loadingView = null;
+        if (v != null) v.dismiss();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // RuneLite runs in its own activity, which shows its own loading screen from here on.
+        if (loadingView != null) {
+            dismissLoading();
+            launching = false;
+            if (play != null) play.setEnabled(true);
+        }
     }
 
     private void showAbout() {
@@ -257,7 +281,10 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
             appVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
         }
-        String html = "<b>RuneLite Mobile</b> " + appVersion + "<br>"
+        String html = "<big><b>Created by Cody Reichenbach</b></big><br>"
+                + "GitHub: <a href=\"https://github.com/CodyEdwin\">CodyEdwin</a><br>"
+                + "Project: <a href=\"https://github.com/CodyEdwin/runelite-mobile\">github.com/CodyEdwin/runelite-mobile</a><br><br>"
+                + "<b>RuneLite Mobile</b> " + appVersion + "<br>"
                 + "RuneLite " + RuneLiteUpdates.bundledVersion(this) + " (bundled) on a Java 17 runtime, "
                 + "drawn through a caciocavallo AWT backend.<br><br>"
                 + "<b>Built on</b><br>"
