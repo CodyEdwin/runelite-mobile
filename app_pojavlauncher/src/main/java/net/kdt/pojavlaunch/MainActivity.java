@@ -587,21 +587,36 @@ public class MainActivity extends BaseActivity implements ControlButtonMenuListe
 
     @Keep
     public static void openLink(String link) {
-        Context ctx = touchpad.getContext(); // no more better way to obtain a context statically
-        ((Activity)ctx).runOnUiThread(() -> {
+        // Called from the JVM (caciocavallo Desktop#browse/open). In the AWT host activity
+        // (JavaGUILauncherActivity, used by RuneLite) there is no MainActivity touchpad.
+        Activity activity = touchpad != null ? (Activity) touchpad.getContext()
+                : JavaGUILauncherActivity.getRunningInstance();
+        if (activity == null) {
+            Log.w("MainActivity", "openLink: no activity to open " + link);
+            return;
+        }
+        activity.runOnUiThread(() -> {
             try {
-                if(link.startsWith("file:")) {
+                Uri uri = Uri.parse(link);
+                if (JagexLoginActivity.SCHEME.equals(uri.getScheme())) {
+                    JagexLoginActivity.start(activity, uri);
+                } else if(link.startsWith("file:")) {
                     int truncLength = 5;
                     if(link.startsWith("file://")) truncLength = 7;
                     String path = link.substring(truncLength);
-                    Tools.openPath(ctx, new File(path), false);
-                }else {
+                    Tools.openPath(activity, new File(path), false);
+                } else if ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) {
+                    // Browsers do not match ACTION_VIEW intents carrying a "*/*" MIME type.
+                    Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    activity.startActivity(intent);
+                } else {
                     Intent intent = new Intent(Intent.ACTION_VIEW);
-                    intent.setDataAndType(Uri.parse(link), "*/*");
-                    ctx.startActivity(intent);
+                    intent.setDataAndType(uri, "*/*");
+                    activity.startActivity(intent);
                 }
             } catch (Throwable th) {
-                Tools.showError(ctx, th);
+                Tools.showError(activity, th);
             }
         });
     }
