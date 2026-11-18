@@ -145,6 +145,7 @@ final class WindowFitter {
             rootPane.setWindowDecorationStyle(JRootPane.NONE);
         }
         markMaximized(frame);
+        SwingUtilities.invokeLater(() -> ToolbarMover.relocate(jFrame));
         if (jFrame.getContentPane() instanceof JComponent) {
             // RuneLite adds a 4px border when the frame is not maximised; cacio never reports
             // a maximised state, so the border would always be there.

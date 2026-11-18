@@ -510,11 +510,30 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         return false;
     }
 
+    private float mScrollRemainder;
+
     private void sendHardwareMouseEvent(MotionEvent event) {
+        // Map through the texture view's own coordinate space. getRawX() minus
+        // getLocationOnScreen() is off by the display-cutout / window inset on some devices.
+        float[] local = {event.getRawX(), event.getRawY()};
         mTextureView.getLocationOnScreen(mMouseViewLocation);
-        sendLocalMousePosition(
-                event.getRawX() - mMouseViewLocation[0],
-                event.getRawY() - mMouseViewLocation[1]);
+        if (event.getSource() != 0 && mTextureView.isAttachedToWindow()) {
+            View decor = getWindow().getDecorView();
+            int[] decorLocation = new int[2];
+            decor.getLocationOnScreen(decorLocation);
+            // event.getX/Y are relative to the window that dispatched it (the decor view).
+            local[0] = event.getX() + decorLocation[0] - mMouseViewLocation[0];
+            local[1] = event.getY() + decorLocation[1] - mMouseViewLocation[1];
+        }
+        sendLocalMousePosition(local[0], local[1]);
+
+        if (event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
+            mScrollRemainder += event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            int notches = (int) mScrollRemainder;
+            mScrollRemainder -= notches;
+            AWTInputBridge.sendScroll(notches);
+            return;
+        }
 
         int buttonState = event.getButtonState();
         int changedButtons = mMouseButtonState ^ buttonState;
@@ -687,7 +706,71 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON3_DOWN_MASK);
         };
 
+        private boolean mMiddleDragging;
+        private boolean mMultiTouch;
+
+        private float centroidX(MotionEvent e) {
+            float sum = 0;
+            for (int i = 0; i < e.getPointerCount(); i++) sum += e.getX(i);
+            return sum / e.getPointerCount();
+        }
+
+        private float centroidY(MotionEvent e) {
+            float sum = 0;
+            for (int i = 0; i < e.getPointerCount(); i++) sum += e.getY(i);
+            return sum / e.getPointerCount();
+        }
+
+        /**
+         * Two fingers: middle-button drag at the fingers' midpoint (OSRS camera rotation).
+         * Three fingers: toggle the soft keyboard.
+         */
+        private boolean onMultiTouch(MotionEvent event) {
+            int action = event.getActionMasked();
+            int pointers = event.getPointerCount();
+            if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                mMultiTouch = true;
+                mHandler.removeCallbacks(mLongPress);
+                if (mDragging) {
+                    AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK, false);
+                    mDragging = false;
+                }
+                if (pointers == 3) {
+                    if (mMiddleDragging) {
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON2_DOWN_MASK, false);
+                        mMiddleDragging = false;
+                    }
+                    toggleKeyboard(null);
+                } else if (pointers == 2 && !mMiddleDragging) {
+                    sendLocalMousePosition(centroidX(event), centroidY(event));
+                    AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON2_DOWN_MASK, true);
+                    mMiddleDragging = true;
+                }
+                return true;
+            }
+            if (action == MotionEvent.ACTION_MOVE && mMiddleDragging) {
+                sendLocalMousePosition(centroidX(event), centroidY(event));
+                return true;
+            }
+            if (action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL) {
+                if (mMiddleDragging) {
+                    AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON2_DOWN_MASK, false);
+                    mMiddleDragging = false;
+                }
+                if (action != MotionEvent.ACTION_POINTER_UP) {
+                    mMultiTouch = false;
+                    mTracking = false;
+                }
+                return true;
+            }
+            return true;
+        }
+
         boolean onTouch(MotionEvent event) {
+            if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN || mMultiTouch) {
+                return onMultiTouch(event);
+            }
             float x = event.getX();
             float y = event.getY();
             switch (event.getActionMasked()) {

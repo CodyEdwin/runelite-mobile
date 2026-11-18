@@ -115,6 +115,10 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         matrix.setScale(contentWidth / viewWidth, contentHeight / viewHeight);
         matrix.postTranslate(mOffsetX, mOffsetY);
         setTransform(matrix);
+        int[] loc = new int[2];
+        getLocationOnScreen(loc);
+        android.util.Log.i("AWTCanvasView", "fit: view " + viewWidth + "x" + viewHeight + " at " + loc[0] + "," + loc[1]
+                + " buffer " + bufferWidth + "x" + bufferHeight + " scale " + scale + " offset " + mOffsetX + "," + mOffsetY);
     }
 
     // Temporary count fps https://stackoverflow.com/a/13729241

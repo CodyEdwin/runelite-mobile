@@ -35,6 +35,7 @@ final class RepaintPump {
     }
 
     private static void pump() {
+        InputFocus.ensureFocusOwner();
         for (Window window : Window.getWindows()) {
             if (!window.isShowing()) continue;
             if (!window.isValid()) window.validate();

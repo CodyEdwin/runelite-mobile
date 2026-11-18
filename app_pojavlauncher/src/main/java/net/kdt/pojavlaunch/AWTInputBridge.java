@@ -5,6 +5,7 @@ public class AWTInputBridge {
     public static final int EVENT_TYPE_CURSOR_POS = 1003;
     public static final int EVENT_TYPE_KEY = 1005;
     public static final int EVENT_TYPE_MOUSE_BUTTON = 1006;
+    public static final int EVENT_TYPE_SCROLL = 1007;
     
     public static void sendKey(char keychar, int keycode) {
         // TODO: Android -> AWT keycode mapping
@@ -30,6 +31,11 @@ public class AWTInputBridge {
         sendMousePress(awtButtons, false);
     }
     
+    /** @param notches wheel notches, positive = away from the user (scroll up / zoom in) */
+    public static void sendScroll(int notches) {
+        if (notches != 0) nativeSendData(EVENT_TYPE_SCROLL, notches, 0, 0, 0);
+    }
+
     public static void sendMousePos(int x, int y) {
         nativeSendData(EVENT_TYPE_CURSOR_POS, x, y, 0, 0);
     }

@@ -7,12 +7,12 @@ import net.kdt.pojavlaunch.AWTInputEvent;
 public class AwtCharSender implements CharacterSenderStrategy {
     @Override
     public void sendBackspace() {
-        AWTInputBridge.sendKey(' ', AWTInputEvent.VK_BACK_SPACE);
+        AWTInputBridge.sendKey('\b', AWTInputEvent.VK_BACK_SPACE);
     }
 
     @Override
     public void sendEnter() {
-        AWTInputBridge.sendKey(' ', AWTInputEvent.VK_ENTER);
+        AWTInputBridge.sendKey('\n', AWTInputEvent.VK_ENTER);
     }
 
     @Override
