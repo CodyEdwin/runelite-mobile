@@ -61,6 +61,7 @@ public final class AWTContext {
         String r = nCreate();
         System.out.println("GPU mode: " + r);
         if (!r.startsWith("OK")) throw new IllegalStateException("GPU mode: " + r);
+        System.out.println("GPU mode: proc lookup " + nProbe());
         created = true;
     }
 
@@ -119,6 +120,7 @@ public final class AWTContext {
         return 0;
     }
 
+    private static native String nProbe();
     private static native boolean nInit(String mobileGluesPath);
     private static native String nCreate();
     private static native void nMakeCurrent(boolean on);

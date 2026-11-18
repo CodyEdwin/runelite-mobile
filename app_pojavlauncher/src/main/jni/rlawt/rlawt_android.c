@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
@@ -57,17 +58,52 @@ static void w_glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { 
 static void w_glRenderbufferStorageMultisample(GLenum t, GLsizei s, GLenum f, GLsizei w, GLsizei h) {
     p_glRenderbufferStorageMultisample(t, s, sizedFormat(f), w, h);
 }
+// LWJGL may reach this library through a different load than the System.load()+nInit() one (seen
+// on the OnePlus Nord / Android 12: every lookup came back NULL -> "Core OpenGL functions could not
+// be found"), so never depend on nInit() having run in this instance: open MobileGlues lazily
+// (path from RLAWT_MG_LIB, set by the launcher) and fall back to a global symbol lookup.
+static void *mgHandle(void) {
+    if (!mg) {
+        const char *p = getenv("RLAWT_MG_LIB");
+        mg = dlopen(p && *p ? p : "libmobileglues.so", RTLD_NOW | RTLD_GLOBAL);
+        LOG("glXGetProcAddress: lazy MobileGlues open %s -> %p", p ? p : "libmobileglues.so", mg);
+        fprintf(stderr, "rlawt: lazy MobileGlues open -> %p\n", mg);
+    }
+    if (mg && !p_glXGetProcAddress) p_glXGetProcAddress = dlsym(mg, "glXGetProcAddress");
+    return mg;
+}
+static int misses;
 __attribute__((visibility("default"))) void *glXGetProcAddress(const GLubyte *name) {
-    if (!mg) return NULL;
     const char *n = (const char *) name;
-    if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
-    if (!strcmp(n, "glRenderbufferStorageMultisample")) return (void *) w_glRenderbufferStorageMultisample;
-    void *f = p_glXGetProcAddress(name);
-    return f ? f : dlsym(mg, n);
+    if (!strcmp(n, "glRenderbufferStorage") || !strcmp(n, "glRenderbufferStorageMultisample")) {
+        // wrappers call through p_*: make sure they're resolved in this instance too
+        if (!p_glRenderbufferStorage && mgHandle()) {
+            p_glRenderbufferStorage = dlsym(mg, "glRenderbufferStorage");
+            p_glRenderbufferStorageMultisample = dlsym(mg, "glRenderbufferStorageMultisample");
+        }
+        if (p_glRenderbufferStorage) return !strcmp(n, "glRenderbufferStorage") ? (void *) w_glRenderbufferStorage : (void *) w_glRenderbufferStorageMultisample;
+    }
+    void *h = mgHandle(), *f = NULL;
+    if (h && p_glXGetProcAddress) f = p_glXGetProcAddress(name);
+    if (!f && h) f = dlsym(h, n);
+    if (!f) f = dlsym(RTLD_DEFAULT, n);
+    if (!f && misses++ < 8) {
+        LOG("glXGetProcAddress(%s) = NULL (mg=%p)", n, mg);
+        fprintf(stderr, "rlawt: glXGetProcAddress(%s) = NULL (mg=%p)\n", n, mg);
+    }
+    return f;
 }
 __attribute__((visibility("default"))) void *glXGetProcAddressARB(const GLubyte *name) { return glXGetProcAddress(name); }
 
 #define JF(name) Java_net_runelite_rlawt_AWTContext_##name
+
+JNIEXPORT jstring JNICALL JF(nProbe)(JNIEnv *env, jclass c) {
+    char b[200];
+    snprintf(b, sizeof b, "mg=%p glGetError=%p glGetString=%p glGetIntegerv=%p", mg,
+        glXGetProcAddress((const GLubyte *) "glGetError"), glXGetProcAddress((const GLubyte *) "glGetString"),
+        glXGetProcAddress((const GLubyte *) "glGetIntegerv"));
+    return (*env)->NewStringUTF(env, b);
+}
 
 JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     if (mg) return JNI_TRUE;

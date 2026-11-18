@@ -179,6 +179,17 @@ public class JREUtils {
             File mgDir = new File(Tools.DIR_GAME_HOME, "MG");
             mgDir.mkdirs();
             envMap.put("MG_DIR_PATH", mgDir.getAbsolutePath());
+            envMap.put("RLAWT_MG_LIB", NATIVE_LIB_DIR + "/libmobileglues.so");
+            // MobileGlues reads $MG_DIR_PATH/config.json; nothing wrote one there, so devices without
+            // a hand-made config ran MG defaults (GL 4.0, no compute). Ship the tested config.
+            File mgConfig = new File(mgDir, "config.json");
+            if (!mgConfig.exists()) {
+                try {
+                    Tools.write(mgConfig.getAbsolutePath(), "{\"enableExtComputeShader\":1,\"customGLVersion\":46}");
+                } catch (Exception e) {
+                    Log.w("JREUtils", "GPU mode: could not write " + mgConfig, e);
+                }
+            }
         }
 
         // Prevent OptiFine (and other error-reporting stuff in Minecraft) from balooning the log
