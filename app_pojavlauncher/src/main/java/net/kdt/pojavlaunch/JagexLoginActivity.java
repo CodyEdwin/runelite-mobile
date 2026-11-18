@@ -155,6 +155,19 @@ public class JagexLoginActivity extends Activity {
         });
         setContentView(buildPopup(mWebView));
 
+        if (savedInstanceState != null && savedInstanceState.getString("verifier") != null) {
+            // Android killed this (:jagexauth) process while Chrome was in front; the Chrome login
+            // continues and the jagex: callback arrives through onNewIntent after this restore.
+            mCodeVerifier = savedInstanceState.getString("verifier");
+            mLoginState = savedInstanceState.getString("loginState");
+            mConsentState = savedInstanceState.getString("consentState");
+            mNonce = savedInstanceState.getString("nonce");
+            mBrowserLogin = savedInstanceState.getBoolean("browser");
+            mLoginUrl = savedInstanceState.getString("loginUrl");
+            Log.i(TAG, "Restored login state after process death");
+            mWebView.loadDataWithBaseURL(null, WAITING_HTML, "text/html", "UTF-8", null);
+            return;
+        }
         mCodeVerifier = randomToken(48);
         mLoginState = randomToken(16);
         String url = AUTH_HOST + "/oauth2/auth?response_type=code"
@@ -184,60 +197,6 @@ public class JagexLoginActivity extends Activity {
             + "<p>After the login, when Chrome shows <i>localhost refused to connect</i>, tap the green "
             + "&#10003; in Chrome's toolbar (or Share &rarr; RuneLite Jagex login) to return here.</p></div></body></html>";
 
-    /**
-     * The consent step redirects Chrome to http://localhost/#...; Android 12+ only hands such an
-     * unverified web link to this app after the user approved "localhost" in the app's
-     * "Open by default" settings. Ask once, then continue either way (share-to-app fallback).
-     */
-    private void ensureLocalhostLinkApproved(Runnable next) {
-        if (Build.VERSION.SDK_INT < 31) {
-            next.run();
-            return;
-        }
-        boolean approved = false;
-        try {
-            android.content.pm.verify.domain.DomainVerificationManager manager =
-                    getSystemService(android.content.pm.verify.domain.DomainVerificationManager.class);
-            android.content.pm.verify.domain.DomainVerificationUserState state =
-                    manager.getDomainVerificationUserState(getPackageName());
-            Integer host = state == null ? null : state.getHostToStateMap().get("localhost");
-            approved = host != null && host != android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_NONE;
-        } catch (Exception e) {
-            Log.w(TAG, "Unable to read the app-link state", e);
-        }
-        Log.i(TAG, "localhost link approved: " + approved);
-        if (approved) {
-            next.run();
-            return;
-        }
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("One-time setup")
-                .setMessage("To return from Chrome after the Jagex login, allow this app to open "
-                        + "\"localhost\" links: Open by default \u2192 Add link \u2192 localhost.")
-                .setPositiveButton("Open settings", (d, w) -> {
-                    mResumeAction = next;
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
-                                Uri.parse("package:" + getPackageName())));
-                    } catch (Exception e) {
-                        mResumeAction = null;
-                        next.run();
-                    }
-                })
-                .setNegativeButton("Skip", (d, w) -> next.run())
-                .setCancelable(false)
-                .show();
-    }
-
-    private Runnable mResumeAction;
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        Runnable action = mResumeAction;
-        mResumeAction = null;
-        if (action != null) action.run();
-    }
 
     /**
      * Sized like the desktop helper's 800x700-ish WebKitGTK window: a floating popup over the
@@ -423,6 +382,17 @@ public class JagexLoginActivity extends Activity {
                 fail("no browser available");
             }
         }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("verifier", mCodeVerifier);
+        out.putString("loginState", mLoginState);
+        out.putString("consentState", mConsentState);
+        out.putString("nonce", mNonce);
+        out.putBoolean("browser", mBrowserLogin);
+        out.putString("loginUrl", mLoginUrl);
     }
 
     @Override
