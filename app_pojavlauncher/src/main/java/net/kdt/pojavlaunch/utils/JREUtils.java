@@ -267,7 +267,11 @@ public class JREUtils {
         // JVM grow only as far as RuneLite needs: a fully sized 2.6 GB heap on a 4 GB phone pushed
         // the system into swap and made the game stutter even at 40+ FPS.
         int maxHeap = Math.min(LauncherPreferences.PREF_RAM_ALLOCATION, safeMaxHeapMb(activity));
-        userArgs.add("-Xms" + Math.min(256, maxHeap) + "M");
+        userArgs.add("-Xms" + Math.min(1024, maxHeap) + "M");
+        // One concurrent-mark thread and two STW GC threads: G1's background marking used to take
+        // two cores (incl. the big cores the game's Client thread runs on) for ~400 ms every ~30 s.
+        userArgs.add("-XX:ConcGCThreads=1");
+        userArgs.add("-XX:ParallelGCThreads=2");
         userArgs.add("-Xmx" + maxHeap + "M");
         userArgs.add("-Xlog:gc:file=" + Tools.DIR_GAME_HOME + "/gc.log::filecount=0");
 
