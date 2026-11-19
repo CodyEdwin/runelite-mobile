@@ -100,6 +100,10 @@
     <string name="log_view_label_log_output">Log output:</string>
 
     <string name="app_short_name" translatable="false">RuneLite Mobile</string>
+    <string name="widget_play_label" translatable="false">Play RuneLite</string>
+    <string name="widget_play_description" translatable="false">Starts RuneLite straight away with your saved launcher settings.</string>
+    <string name="shortcut_play_short" translatable="false">Play</string>
+    <string name="shortcut_play_long" translatable="false">Play RuneLite</string>
 
     <!--  Make sure the people turning this on can read English.  -->
     <string name="multirt_no_internet">Failed to download, check your internet connection.</string>

@@ -57,6 +57,25 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         setContentView(buildUi());
+        publishPlayShortcut();
+        if (savedInstanceState == null) takeQuickPlay(getIntent());
+    }
+
+    /** Set when the widget / "Play" shortcut opened us: press PLAY once the UI is ready. */
+    private boolean quickPlay;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        takeQuickPlay(intent);
+    }
+
+    private void takeQuickPlay(Intent intent) {
+        if (intent != null && PlayRuneLiteActivity.ACTION_PLAY.equals(intent.getAction())) {
+            quickPlay = true;
+            intent.setAction(null); // don't replay on recreation
+            setIntent(intent);
+        }
     }
 
     @Override
@@ -65,6 +84,28 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         loadProfiles();
         launching = false;
         play.setEnabled(true);
+        if (quickPlay) {
+            quickPlay = false;
+            // Game already up (e.g. this launcher was in another task): just show it.
+            if (!PlayRuneLiteActivity.bringGameToFront(this)) play.post(this::play);
+        }
+    }
+
+    /** Long-press "Play" on the app icon (dynamic so it follows the .debug package id). */
+    private void publishPlayShortcut() {
+        try {
+            Intent intent = new Intent(this, PlayRuneLiteActivity.class);
+            intent.setAction(PlayRuneLiteActivity.ACTION_PLAY);
+            androidx.core.content.pm.ShortcutInfoCompat info =
+                    new androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "play_runelite")
+                            .setShortLabel(getString(R.string.shortcut_play_short))
+                            .setLongLabel(getString(R.string.shortcut_play_long))
+                            .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                            .setIntent(intent)
+                            .build();
+            androidx.core.content.pm.ShortcutManagerCompat.pushDynamicShortcut(this, info);
+        } catch (Throwable ignored) {
+        }
     }
 
     private int dp(float v) {
