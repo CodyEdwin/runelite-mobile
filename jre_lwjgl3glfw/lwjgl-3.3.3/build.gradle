@@ -36,7 +36,7 @@ jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     archiveBaseName.set("lwjgl-${lwjglVersion}-merged-modules")
 //    destinationDirectory.set(project(":jre_lwjgl3glfw").layout.buildDirectory.dir("libs/lwjgl-${lwjglVersion}"))
-    destinationDirectory = file("${project(':app_pojavlauncher').layout.projectDirectory}/src/main/assets/components/lwjgl3/${lwjglVersion}")
+    destinationDirectory = file("${project(':runelite').layout.projectDirectory}/src/main/assets/components/lwjgl3/${lwjglVersion}")
 
     from {
         // Ensure that the core lwjgl jar is processed first so duplicates in META-INF from other classes

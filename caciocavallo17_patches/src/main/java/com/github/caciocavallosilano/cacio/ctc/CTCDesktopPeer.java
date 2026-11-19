@@ -14,7 +14,7 @@ import java.net.URI;
  * The original reported BROWSE/OPEN as unsupported and its browse()/open() were empty, so
  * java.awt.Desktop could never open a link on Android with Java 17 (the Java 8 cacio build did
  * forward them to the launcher through libpojavexec_awt). This version forwards both to the
- * launcher's MainActivity#openLink via the natives in app_pojavlauncher/src/main/jni/awt_bridge.c.
+ * launcher's MainActivity#openLink via the natives in runelite/src/main/jni/awt_bridge.c.
  *
  * Rebuild with caciocavallo17_patches/build.sh.
  */

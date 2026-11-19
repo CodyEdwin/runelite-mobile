@@ -79,7 +79,7 @@ Reports from other devices are welcome; open an issue with the log from *Share l
 
 ## Building
 ```
-./gradlew :app_pojavlauncher:assembleDebug
+./gradlew :runelite:assembleDebug
 ```
 The shim jar is rebuilt with `runelite_android_shim/build.sh`, the patched cacio classes with
 `caciocavallo17_patches/build.sh`.

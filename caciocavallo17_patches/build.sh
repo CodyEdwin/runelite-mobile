@@ -4,7 +4,7 @@
 # existing installs re-extract the jar.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-CACIO="$HERE/../app_pojavlauncher/src/main/assets/components/caciocavallo17"
+CACIO="$HERE/../runelite/src/main/assets/components/caciocavallo17"
 OUT="$(mktemp -d)"
 javac -source 17 -target 17 -nowarn \
     --add-exports java.desktop/java.awt.peer=ALL-UNNAMED \

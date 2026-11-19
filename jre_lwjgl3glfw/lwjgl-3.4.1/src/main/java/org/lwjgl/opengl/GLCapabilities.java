@@ -4793,7 +4793,7 @@ public final class GLCapabilities {
     GLCapabilities(FunctionProvider provider, Set<String> ext, boolean fc, IntFunction<PointerBuffer> bufferFactory) {
         forwardCompatible = fc;
 
-        PojavRendererInit.onCreateCapabilities(provider);
+        RuneLiteRendererInit.onCreateCapabilities(provider);
 
         PointerBuffer caps = bufferFactory.apply(ADDRESS_BUFFER_SIZE);
 

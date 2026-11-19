@@ -3,7 +3,7 @@
 # bundled runelite.jar. Requires a JDK 17 on PATH.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-RL="$HERE/../app_pojavlauncher/src/main/assets/components/runelite"
+RL="$HERE/../runelite/src/main/assets/components/runelite"
 OUT="$(mktemp -d)"
 javac --release 11 -nowarn -cp "$RL/runelite.jar" -d "$OUT" $(find "$HERE/src/main/java" -name '*.java')
 [ -d "$HERE/src/main/resources" ] && cp -r "$HERE/src/main/resources/." "$OUT/"
