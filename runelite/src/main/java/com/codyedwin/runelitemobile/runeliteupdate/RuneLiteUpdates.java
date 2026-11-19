@@ -53,17 +53,24 @@ public final class RuneLiteUpdates {
      */
     public static RuneLiteBootstrap.LaunchPlan prepareLaunch(Activity activity) {
         String bundled = bundledVersion(activity);
+        UpdaterStatus.begin();
+        UpdaterStatus.log("bundled client " + bundled);
         try {
             RuneLiteBootstrap b = bootstrap(activity);
             RuneLiteBootstrap.State state = b.loadState();
+            UpdaterStatus.log("client mode " + RuneLiteBootstrap.modeLabel(state.mode));
+            if (!(RuneLiteBootstrap.MODE_AUTO.equals(state.mode) || RuneLiteBootstrap.MODE_OFFICIAL.equals(state.mode)))
+                UpdaterStatus.log("no update check (mode " + RuneLiteBootstrap.modeLabel(state.mode) + ")");
             if (RuneLiteBootstrap.MODE_AUTO.equals(state.mode) || RuneLiteBootstrap.MODE_OFFICIAL.equals(state.mode)) {
                 try {
                     RuneLiteBootstrap.UpdateResult r = b.checkForUpdate((msg, pct) ->
                             ProgressLayout.setProgress(ProgressLayout.DOWNLOAD_RUNELITE, pct, msg));
                     Log.i(TAG, r.message + (r.compat != null ? "\n" + r.compat : ""));
+                    UpdaterStatus.log(r.message + (r.downloaded ? " (" + UpdaterStatus.bytes(r.bytesDownloaded) + " downloaded)" : ""));
                     if (r.downloaded || (r.compat != null && !r.compat.isCompatible())) toast(activity, r.message);
                 } catch (IOException e) {
                     Log.w(TAG, "RuneLite update check failed", e);
+                    UpdaterStatus.log("couldn't check for updates (" + UpdaterStatus.reason(e) + "), keeping installed clients");
                     toast(activity, "Couldn't check for RuneLite updates: " + e.getMessage());
                 } finally {
                     ProgressLayout.clearProgress(ProgressLayout.DOWNLOAD_RUNELITE);
@@ -75,9 +82,11 @@ public final class RuneLiteUpdates {
                 if (!plan.note.startsWith("Using the bundled RuneLite " + bundled + " (newer")) toast(activity, plan.note);
             }
             Log.i(TAG, "Launching RuneLite " + plan.version + (plan.isBundled() ? " (bundled)" : " (official)"));
+            UpdaterStatus.log("launching RuneLite " + plan.version + (plan.isBundled() ? " (bundled)" : " (official)"));
             return plan;
         } catch (Exception e) {
             Log.w(TAG, "Falling back to the bundled RuneLite", e);
+            UpdaterStatus.log("updater error (" + UpdaterStatus.reason(e) + "), launching bundled " + bundled);
             RuneLiteBootstrap.LaunchPlan plan = new RuneLiteBootstrap.LaunchPlan();
             plan.version = bundled;
             return plan;

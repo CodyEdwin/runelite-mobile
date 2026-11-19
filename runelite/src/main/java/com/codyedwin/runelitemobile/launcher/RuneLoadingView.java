@@ -36,6 +36,9 @@ public class RuneLoadingView extends View {
     private final Paint rune = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint log = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dbg = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Small muted updater debug line (see UpdaterStatus); empty = hidden. */
+    private volatile String debug = "";
     private static final int LOG_LINES = 5;
     private final java.util.ArrayDeque<String> logLines = new java.util.ArrayDeque<>();
     private static final java.util.regex.Pattern LOGBACK = java.util.regex.Pattern.compile(
@@ -69,6 +72,10 @@ public class RuneLoadingView extends View {
         log.setTextAlign(Paint.Align.CENTER);
         log.setTypeface(Typeface.MONOSPACE);
         log.setTextSize(11 * density);
+        dbg.setTextAlign(Paint.Align.CENTER);
+        dbg.setTypeface(Typeface.MONOSPACE);
+        dbg.setTextSize(10 * density);
+        dbg.setColor(0xFF9C8CBF);
         setClickable(true);
         setFocusable(true);
     }
@@ -78,6 +85,12 @@ public class RuneLoadingView extends View {
         if (!s.equals(status) && !s.isEmpty()) addLog("» " + s);
         status = s;
         progress = p;
+        postInvalidateOnAnimation();
+    }
+
+    /** Updater debug line under the progress bar (any thread; drawn on the next frame). */
+    public void setDebug(String s) {
+        debug = s == null ? "" : s;
         postInvalidateOnAnimation();
     }
 
@@ -195,6 +208,31 @@ public class RuneLoadingView extends View {
         float lh = log.getTextSize() * 1.35f;
         float maxW = w * 0.86f;
         float ly = by + bh + 12 * density + log.getTextSize();
+        String d = debug;
+        if (!d.isEmpty()) {
+            float dh = dbg.getTextSize() * 1.3f;
+            float dy = by + bh + 10 * density + dbg.getTextSize();
+            float dw = w * 0.86f;
+            int n1 = dbg.breakText(d, true, dw, null);
+            if (n1 >= d.length()) {
+                c.drawText(d, cx, dy, dbg);
+                ly += dh + 6 * density;
+            } else {
+                int cut = d.lastIndexOf(' ', n1);
+                if (cut <= n1 / 2) cut = n1;
+                String l1 = d.substring(0, cut).trim(), l2 = d.substring(cut).trim();
+                if (dbg.measureText(l2) > dw) {
+                    int n2 = dbg.breakText(l2, true, dw - dbg.measureText("…"), null);
+                    l2 = l2.substring(0, Math.max(0, n2)) + "…";
+                }
+                c.drawText(l1, cx, dy, dbg);
+                c.drawText(l2, cx, dy + dh, dbg);
+                ly += 2 * dh + 6 * density;
+            }
+        }
+        // Keep the newest lines on screen when the updater line pushed the log down.
+        int fit = Math.max(1, (int) ((h - 6 * density - ly) / lh) + 1);
+        if (lines.length > fit) lines = java.util.Arrays.copyOfRange(lines, lines.length - fit, lines.length);
         for (int i = 0; i < lines.length; i++) {
             boolean newest = i == lines.length - 1;
             int age = lines.length - 1 - i;

@@ -468,6 +468,8 @@ public final class Tools {
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNTIME, runtimeName);
         if (runeLiteProfile != null) intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_PROFILE, runeLiteProfile);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE_VERSION, plan.version);
+        intent.putStringArrayListExtra(JavaGUILauncherActivity.EXTRA_UPDATER_LOG,
+                com.codyedwin.runelitemobile.runeliteupdate.UpdaterStatus.snapshot());
         if (!plan.isBundled()) {
             StringBuilder classpath = new StringBuilder();
             for (File file : plan.classpath) {

@@ -64,6 +64,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     /** Classpath of a downloaded official RuneLite release; absent = the bundled runelite.jar. */
     public static final String EXTRA_RUNELITE_CLASSPATH = "runeLiteClasspath";
     public static final String EXTRA_RUNELITE_VERSION = "runeLiteVersion";
+    /** "Updater: ..." lines from the launcher process, written into latestlog.txt here. */
+    public static final String EXTRA_UPDATER_LOG = "runeLiteUpdaterLog";
     public static final String EXTRA_RUNELITE_JVM_ARGS = "runeLiteJvmArgs";
     /** Name of the Java runtime that should be used (optional, avoids re-picking it). */
     public static final String EXTRA_RUNTIME = "runtimeName";
@@ -140,6 +142,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             if (!latestLogFile.exists() && !latestLogFile.createNewFile())
                 throw new IOException("Failed to create a new log file");
             Logger.begin(latestLogFile.getAbsolutePath());
+            java.util.ArrayList<String> updaterLog = getIntent().getStringArrayListExtra(EXTRA_UPDATER_LOG);
+            if (updaterLog != null) for (String line : updaterLog) Logger.appendToLog(line);
         }catch (IOException e) {
             Tools.showError(this, e, true);
         }

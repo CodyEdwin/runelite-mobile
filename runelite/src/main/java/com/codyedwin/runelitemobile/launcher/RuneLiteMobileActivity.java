@@ -348,6 +348,8 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         status.setText("");
         final RuneLoadingView loading = RuneLoadingView.attach(this, "Checking for updates…", 0.1f);
         loadingView = loading;
+        // Live updater steps under "Checking for updates…" (also logged as "Updater: ...").
+        com.codyedwin.runelitemobile.runeliteupdate.UpdaterStatus.setSink(loading::setDebug);
         new Thread(() -> {
             try {
                 // First start: wait for the bundled components (cacio, shim, RuneLite) to unpack.
@@ -371,6 +373,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
     private RuneLoadingView loadingView;
 
     private void dismissLoading() {
+        com.codyedwin.runelitemobile.runeliteupdate.UpdaterStatus.setSink(null);
         RuneLoadingView v = loadingView;
         loadingView = null;
         if (v != null) v.dismiss();

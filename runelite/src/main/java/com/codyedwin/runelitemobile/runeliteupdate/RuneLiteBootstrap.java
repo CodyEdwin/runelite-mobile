@@ -200,18 +200,25 @@ public final class RuneLiteBootstrap {
         State state = loadState();
         try {
             report(progress, "Checking for RuneLite updates", 0);
+            UpdaterStatus.log("fetching bootstrap.json from " + UpdaterStatus.host(BOOTSTRAP_URL));
             byte[] json = download(BOOTSTRAP_URL, 2 * 1024 * 1024);
+            UpdaterStatus.log("got bootstrap.json (" + UpdaterStatus.bytes(json.length) + "), fetching its signature");
             byte[] signature = download(SIGNATURE_URL, 64 * 1024);
             if (!verifySignature(json, signature))
                 throw new IOException("bootstrap.json signature check failed (RuneLite may have changed its signing key; the app needs an update)");
+            UpdaterStatus.log("bootstrap.json signature OK");
 
             JsonObject bootstrap = JsonParser.parseString(new String(json, StandardCharsets.UTF_8)).getAsJsonObject();
             String version = bootstrap.get("version").getAsString();
             result.latestVersion = version;
             state.latestSeen = version;
+            UpdaterStatus.log("latest official " + version + ", installed official " + (state.current != null ? state.current : "none"));
 
             Manifest existing = loadManifest(version);
+            if (existing != null && !existing.compatible)
+                UpdaterStatus.log(version + " was already checked: not supported by the Android shim");
             if (existing != null && existing.compatible && verifyFiles(existing, false) == null) {
+                UpdaterStatus.log("official " + version + " already downloaded, up to date");
                 if (!version.equals(state.current)) promote(state, version);
                 result.installed = true;
                 result.message = "RuneLite " + version + " is up to date";
@@ -233,6 +240,7 @@ public final class RuneLiteBootstrap {
                 total += a.has("size") ? a.get("size").getAsLong() : 0;
             }
             if (wanted.isEmpty()) throw new IOException("bootstrap.json lists no artifacts");
+            UpdaterStatus.log("verifying " + wanted.size() + " jars for " + version + " (" + UpdaterStatus.bytes(total) + ")");
 
             long done = 0;
             mkdirs(repoDir);
@@ -250,7 +258,13 @@ public final class RuneLiteBootstrap {
                     final long base = done;
                     final long totalSize = total;
                     report(progress, "Downloading " + art.name, percent(done, total));
-                    downloadTo(path, target, art, (bytes) -> report(progress, "Downloading " + art.name, percent(base + bytes, totalSize)));
+                    UpdaterStatus.log("downloading " + art.name + " (" + UpdaterStatus.bytes(art.size) + ") from " + UpdaterStatus.host(path));
+                    downloadTo(path, target, art, (bytes) -> {
+                        report(progress, "Downloading " + art.name, percent(base + bytes, totalSize));
+                        UpdaterStatus.progress(art.name, "downloading " + art.name + " " + UpdaterStatus.bytes(bytes) + " / "
+                                + UpdaterStatus.bytes(art.size) + " (" + percent(base + bytes, totalSize) + "% total)");
+                    });
+                    UpdaterStatus.log(art.name + " downloaded, SHA-256 OK");
                     result.downloaded = true;
                     result.bytesDownloaded += target.length();
                 }
@@ -269,6 +283,7 @@ public final class RuneLiteBootstrap {
             }
 
             report(progress, "Checking RuneLite " + version + " against the Android shim", 99);
+            UpdaterStatus.log("checking " + version + " against the Android shim");
             if (shimJar != null && shimJar.isFile()) {
                 ShimCompat.Report compat = ShimCompat.check(shimJar, filesOf(manifest));
                 result.compat = compat;
@@ -279,6 +294,7 @@ public final class RuneLiteBootstrap {
             mkdirs(versionsDir);
             writeAtomically(new File(versionsDir, safeName(version) + ".json"), GSON.toJson(manifest).getBytes(StandardCharsets.UTF_8));
 
+            UpdaterStatus.log("shim check: " + (manifest.compatible ? "compatible" : "NOT compatible"));
             if (!manifest.compatible) {
                 result.message = "RuneLite " + version + " was downloaded but the Android shim does not support it yet; staying on "
                         + (state.current != null ? state.current : "the bundled client");
@@ -289,6 +305,7 @@ public final class RuneLiteBootstrap {
             result.message = result.downloaded ? "Installed RuneLite " + version : "RuneLite " + version + " is up to date";
             return finish(state, result, null);
         } catch (IOException | RuntimeException e) {
+            UpdaterStatus.log("update check failed: " + UpdaterStatus.reason(e));
             state.lastCheck = System.currentTimeMillis();
             state.lastError = String.valueOf(e.getMessage());
             saveState(state);
@@ -341,7 +358,12 @@ public final class RuneLiteBootstrap {
         State state = loadState();
         LaunchPlan plan = new LaunchPlan();
         plan.version = bundledVersion;
-        if (MODE_BUNDLED.equals(state.mode)) return plan;
+        UpdaterStatus.log("mode " + modeLabel(state.mode) + "; bundled " + bundledVersion + ", official "
+                + (state.current != null ? state.current : "none") + (state.previous != null ? " (fallback " + state.previous + ")" : ""));
+        if (MODE_BUNDLED.equals(state.mode)) {
+            UpdaterStatus.log("using bundled " + bundledVersion + " (mode is Bundled only)");
+            return plan;
+        }
 
         List<String> candidates = new ArrayList<>();
         if (MODE_PREVIOUS.equals(state.mode)) {
@@ -355,19 +377,30 @@ public final class RuneLiteBootstrap {
         for (String version : candidates) {
             if (version == null) continue;
             Manifest manifest = loadManifest(version);
-            if (manifest == null || !manifest.compatible) continue;
+            if (manifest == null) {
+                UpdaterStatus.log("official " + version + " is not installed, skipping");
+                continue;
+            }
+            if (!manifest.compatible) {
+                UpdaterStatus.log("official " + version + " is not supported by the shim, skipping");
+                continue;
+            }
             if (MODE_AUTO.equals(state.mode) && bundledVersion != null && compareVersions(version, bundledVersion) < 0) {
+                UpdaterStatus.log("using bundled " + bundledVersion + " (newer than official " + version + ")");
                 // The bundled client is newer than this release (e.g. a snapshot built after it).
                 if (note.length() == 0) plan.note = "Using the bundled RuneLite " + bundledVersion + " (newer than release " + version + ")";
                 return plan;
             }
+            UpdaterStatus.log("verifying hashes of official " + version);
             String broken = verifyFiles(manifest, true);
             if (broken != null) {
+                UpdaterStatus.log("official " + version + " is damaged: " + broken);
                 note.append("RuneLite ").append(version).append(" is damaged (").append(broken).append("). ");
                 continue;
             }
             int attempts = state.attempts.containsKey(version) ? state.attempts.get(version) : 0;
             if (!isConfirmed(version) && attempts >= MAX_UNCONFIRMED_ATTEMPTS) {
+                UpdaterStatus.log("official " + version + " failed to start " + attempts + " times, skipping");
                 note.append("RuneLite ").append(version).append(" failed to start ").append(attempts).append(" times. ");
                 continue;
             }
@@ -378,11 +411,21 @@ public final class RuneLiteBootstrap {
             plan.manifest = manifest;
             plan.version = version;
             plan.classpath = launchClasspath(manifest);
+            UpdaterStatus.log("using official " + version + (isConfirmed(version) ? "" : " (not confirmed yet, attempt " + (attempts + 1) + "/" + MAX_UNCONFIRMED_ATTEMPTS + ")"));
             if (note.length() > 0) plan.note = note + "Using RuneLite " + version + ".";
             return plan;
         }
         if (note.length() > 0) plan.note = note + "Using the bundled RuneLite " + bundledVersion + ".";
+        UpdaterStatus.log("using bundled " + bundledVersion + " (no usable official release)");
         return plan;
+    }
+
+    static String modeLabel(String mode) {
+        if (MODE_AUTO.equals(mode)) return "Automatic";
+        if (MODE_OFFICIAL.equals(mode)) return "Latest official";
+        if (MODE_BUNDLED.equals(mode)) return "Bundled only";
+        if (MODE_PREVIOUS.equals(mode)) return "Previous official";
+        return String.valueOf(mode);
     }
 
     /** Clear the failure counter so a version that was given up on is tried again. */
@@ -418,7 +461,10 @@ public final class RuneLiteBootstrap {
                 File stamp = new File(unsignedDir, a.name + ".src");
                 String key = a.hash + " " + original.length();
                 String have = stamp.isFile() ? readText(stamp).trim() : null;
-                if (!copy.isFile() || !key.equals(have)) {
+                if (copy.isFile() && key.equals(have)) {
+                    UpdaterStatus.log("using cached unsigned copy of " + a.name);
+                } else {
+                    UpdaterStatus.log("stripping signature from " + a.name + " (shares packages with the shim)");
                     if (!unsignedDir.isDirectory() && !unsignedDir.mkdirs()) throw new IOException("Cannot create " + unsignedDir);
                     stripSignature(original, copy);
                     writeText(stamp, key);
@@ -429,6 +475,7 @@ public final class RuneLiteBootstrap {
                 keep.add(stamp.getName());
             } catch (Exception e) {
                 System.err.println("RuneLiteBootstrap: could not make an unsigned copy of " + a.name + ": " + e);
+                UpdaterStatus.log("could not strip " + a.name + ": " + UpdaterStatus.reason(e));
             }
         }
         File[] old = unsignedDir.listFiles();
@@ -645,6 +692,7 @@ public final class RuneLiteBootstrap {
             } catch (IOException e) {
                 last = e;
                 tmp.delete();
+                UpdaterStatus.log(art.name + " attempt " + (attempt + 1) + "/3 failed: " + UpdaterStatus.reason(e));
             } catch (java.security.NoSuchAlgorithmException e) {
                 throw new IOException(e);
             }
