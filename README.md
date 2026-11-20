@@ -20,7 +20,8 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
 - **The real RuneLite client**: your profiles, settings and plugins, with the Jagex account login
   done in an Android browser tab and the session kept across restarts.
 - **GPU mode (experimental)**: RuneLite's GPU plugin running on OpenGL 4.6 translated to GLES 3.2 by
-  [MobileGlues](https://github.com/MobileGL-Dev/MobileGlues).
+  [MobileGlues](https://github.com/MobileGL-Dev/MobileGlues), or optionally Mesa Zink (OpenGL 4.6 on
+  the phone's Vulkan driver) with *GPU renderer: Zink*.
 - **117 HD support**: in GPU mode the 117 HD plugin is installed from the Plugin Hub automatically
   (once per profile). Only one renderer runs at a time, and if 117 HD fails it falls back to the
   stock GPU plugin.
@@ -103,6 +104,7 @@ Created by [Cody Reichenbach](https://github.com/CodyEdwin).
   (LGPL-3.0): JVM launch and input bridge
 - [MobileGlues](https://github.com/MobileGL-Dev/MobileGlues): OpenGL on GLES for GPU mode and 117 HD
 - [Caciocavallo](https://github.com/PojavLauncherTeam/caciocavallo) and OpenJDK (GPLv2 + Classpath Exception)
+- [Mesa](https://mesa3d.org) (MIT): Zink renderer (`libOSMesa.so` from PojavLauncher)
 - [117 HD](https://github.com/117HD/RLHD) plugin, installed from the RuneLite Plugin Hub
 - Apache Commons, Gson, JNA, xz, bytehook
 

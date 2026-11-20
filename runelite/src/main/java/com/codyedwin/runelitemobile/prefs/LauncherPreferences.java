@@ -28,6 +28,8 @@ public class LauncherPreferences {
     /** Opt-in RuneLite performance mode (Stretched Mode for the session: lower resolution, higher FPS). */
     public static final String PREF_KEY_RUNELITE_PERFORMANCE = "runelitePerformanceMode";
     public static final String PREF_KEY_RUNELITE_GPU = "runeliteGpuMode";
+    /** GPU mode renderer: Mesa Zink (OpenGL on Vulkan) instead of MobileGlues (OpenGL on GLES). */
+    public static final String PREF_KEY_RUNELITE_ZINK = "runeliteGpuZink";
     /** Load the bundled + user sideloaded RuneLite plugins (default on). */
     public static final String PREF_KEY_RUNELITE_SIDELOADED = "runeliteLoadSideloadedPlugins";
     /**
