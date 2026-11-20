@@ -253,22 +253,21 @@ JNIEXPORT void JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_nativeWi
     if (window != 0) ANativeWindow_release((ANativeWindow*) (intptr_t) window);
 }
 
-static int window_sink(void* target, const uint32_t* src, uint32_t w, uint32_t h) {
-    ANativeWindow* window = target;
-    ANativeWindow_Buffer buffer;
-    if (ANativeWindow_lock(window, &buffer, NULL) != 0) return 0;
-    if ((uint32_t) buffer.width >= w && (uint32_t) buffer.height >= h) {
-        convert_screen(src, buffer.bits, w, h, (size_t) buffer.stride);
+static uint32_t* window_stage;
+static size_t window_stage_len;
+
+static int stage_sink(void* target, const uint32_t* src, uint32_t w, uint32_t h) {
+    size_t n = (size_t) w * h;
+    if (window_stage_len < n) {
+        free(window_stage);
+        window_stage = malloc(n * 4);
+        window_stage_len = window_stage ? n : 0;
+        if (!window_stage) return 0;
     }
-    ANativeWindow_unlockAndPost(window);
+    memcpy(window_stage, src, n * 4);
     return 1;
 }
 
-/*
- * Same as renderAWTScreenFrameToBitmap, but converts straight into the Surface's next buffer and
- * posts it: no Bitmap, no hardware-canvas texture upload. The buffer geometry is pinned to the
- * screen size, so TextureView resetting its default buffer size cannot shrink the picture.
- */
 JNIEXPORT jint JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_renderAWTScreenFrameToWindow(JNIEnv* env, jclass clazz, jlong windowPtr, jint width, jint height, jboolean force) {
     ANativeWindow* window = (ANativeWindow*) (intptr_t) windowPtr;
     if (window == NULL || width <= 0 || height <= 0) return 0;
@@ -277,7 +276,17 @@ JNIEXPORT jint JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_renderAW
         if (ANativeWindow_setBuffersGeometry(window, width, height, WINDOW_FORMAT_RGBX_8888) != 0) return 0;
         force = JNI_TRUE;
     }
-    return with_screen_pixels(force, (uint32_t) width, (uint32_t) height, window_sink, window);
+    /* Copy out under SCREEN_LOCK, then dequeue the window buffer (which can wait for the compositor
+     * for up to a vsync) and convert with the lock released, so Swing painting never waits on it. */
+    jint r = with_screen_pixels(force, (uint32_t) width, (uint32_t) height, stage_sink, NULL);
+    if (r != 1) return r;
+    ANativeWindow_Buffer buffer;
+    if (ANativeWindow_lock(window, &buffer, NULL) != 0) return 0;
+    if (buffer.width >= width && buffer.height >= height) {
+        convert_screen(window_stage, buffer.bits, (uint32_t) width, (uint32_t) height, (size_t) buffer.stride);
+    }
+    ANativeWindow_unlockAndPost(window);
+    return 1;
 }
 
 /* sched_setaffinity for a thread of this process (tid), mask = bit per CPU. */

@@ -17,6 +17,7 @@
 static void *mg;
 static EGLDisplay dpy = EGL_NO_DISPLAY; static EGLContext ctx = EGL_NO_CONTEXT; static EGLSurface surf = EGL_NO_SURFACE;
 #define NPBO 3
+#define GPU_WAIT_NS 25000000ull
 static GLuint fbo, rbColor, rbDepth, pbo[NPBO]; static int fw, fh, pboW[NPBO], pboH[NPBO], cur, frames;
 static GLsync fence[NPBO];
 static GLsync rfence[NPBO];
@@ -347,9 +348,12 @@ static jint swapRing(JNIEnv *env, jintArray dst, jintArray outWH) {
     // (~15 ms, a CPU copy from tiled memory), so the copy stays on the GPU.
     int prev = (cur + NPBO - 1) % NPBO, old = (cur + 1) % NPBO, filled = 0;
     int64_t t0 = now_us(), t1 = t0, t2 = t0;
+    // Waits are bounded (GPU_WAIT_NS): when the GPU stalls (shader compiles, app in background) the
+    // frame is dropped instead of the Client thread blocking for 100 ms per fence.
     if (rW[prev] > 0 && fence[prev]) {
-        p_glClientWaitSync(fence[prev], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        GLenum st = p_glClientWaitSync(fence[prev], GL_SYNC_FLUSH_COMMANDS_BIT, GPU_WAIT_NS);
         p_glDeleteSync(fence[prev]); fence[prev] = 0;
+        if (st == GL_TIMEOUT_EXPIRED || st == GL_WAIT_FAILED) goto map;
         if (!pbo[0]) p_glGenBuffers(NPBO, pbo);
         p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[prev]);
         if (pboW[prev] != rW[prev] || pboH[prev] != rH[prev]) {
@@ -362,14 +366,15 @@ static jint swapRing(JNIEnv *env, jintArray dst, jintArray outWH) {
         rfence[prev] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         p_glFlush();
     }
+map:
     // Stage 3: map the PBO filled last swap (already flipped by the blit) and copy it out with wide
     // loads (the mapping is uncached), swizzling in cache.
     if (rfence[old] && pboW[old] > 0) {
         int w = pboW[old], h = pboH[old];
-        p_glClientWaitSync(rfence[old], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        GLenum st = p_glClientWaitSync(rfence[old], GL_SYNC_FLUSH_COMMANDS_BIT, GPU_WAIT_NS);
         p_glDeleteSync(rfence[old]); rfence[old] = 0;
         t1 = now_us();
-        if ((*env)->GetArrayLength(env, dst) >= w * h) {
+        if (st != GL_TIMEOUT_EXPIRED && st != GL_WAIT_FAILED && (*env)->GetArrayLength(env, dst) >= w * h) {
             p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[old]);
             const uint8_t *src = p_glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr) w * h * 4, GL_MAP_READ_BIT);
             if (src) {
