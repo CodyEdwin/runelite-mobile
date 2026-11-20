@@ -19,6 +19,7 @@ static EGLDisplay dpy = EGL_NO_DISPLAY; static EGLContext ctx = EGL_NO_CONTEXT; 
 #define NPBO 3
 static GLuint fbo, rbColor, rbDepth, pbo[NPBO]; static int fw, fh, pboW[NPBO], pboH[NPBO], cur, frames;
 static GLsync fence[NPBO];
+static GLuint rFbo[NPBO], rRb[NPBO]; static int rW[NPBO], rH[NPBO]; static uint8_t *stage; static size_t stageCap;
 
 #define F(ret, name, args) static ret (*p_##name) args;
 F(EGLDisplay, eglGetDisplay, (EGLNativeDisplayType)) F(EGLBoolean, eglInitialize, (EGLDisplay, EGLint*, EGLint*))
@@ -42,6 +43,11 @@ F(void, glRenderbufferStorageMultisample, (GLenum, GLsizei, GLenum, GLsizei, GLs
 F(void*, glXGetProcAddress, (const GLubyte*))
 F(GLsync, glFenceSync, (GLenum, GLbitfield)) F(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64))
 F(void, glDeleteSync, (GLsync))
+F(void, glBlitFramebuffer, (GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum))
+F(GLboolean, glIsEnabled, (GLenum)) F(void, glEnable, (GLenum)) F(void, glDisable, (GLenum))
+F(void, glTexImage2D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*))
+F(void, glTexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*))
+F(void, glTexParameteri, (GLenum, GLenum, GLint))
 #undef F
 #define L(name) if (!(p_##name = dlsym(mg, #name))) { LOG("missing %s", #name); return JNI_FALSE; }
 
@@ -62,6 +68,28 @@ static GLenum sizedFormat(GLenum f) {
 static void w_glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { p_glRenderbufferStorage(t, sizedFormat(f), w, h); }
 static void w_glRenderbufferStorageMultisample(GLenum t, GLsizei s, GLenum f, GLsizei w, GLsizei h) {
     p_glRenderbufferStorageMultisample(t, s, sizedFormat(f), w, h);
+}
+// The GPU plugin uploads its full-screen interface texture every frame as GL_BGRA /
+// GL_UNSIGNED_INT_8_8_8_8_REV, which GLES lacks, so MobileGlues converted it on the CPU (12-20% of
+// the Client thread). Those bytes are B,G,R,A in memory: upload them as plain RGBA and swap red and
+// blue back with the texture's swizzle when sampling, so the driver uploads them as they are.
+#define BGRA_FMT 0x80E1
+#define REV8888 0x8367
+static int bgraUpload(GLenum t, GLenum f, GLenum ty) {
+    return t == GL_TEXTURE_2D && f == BGRA_FMT && (ty == GL_UNSIGNED_BYTE || ty == REV8888) && p_glTexParameteri;
+}
+static void swizzleBgra(GLenum t) {
+    p_glTexParameteri(t, GL_TEXTURE_SWIZZLE_R, GL_BLUE); p_glTexParameteri(t, GL_TEXTURE_SWIZZLE_B, GL_RED);
+}
+static void w_glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum f, GLenum ty, const void *px) {
+    if (!bgraUpload(t, f, ty)) { p_glTexImage2D(t, l, ifmt, w, h, b, f, ty, px); return; }
+    p_glTexImage2D(t, l, GL_RGBA8, w, h, b, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    swizzleBgra(t);
+}
+static void w_glTexSubImage2D(GLenum t, GLint l, GLint x, GLint y, GLsizei w, GLsizei h, GLenum f, GLenum ty, const void *px) {
+    if (!bgraUpload(t, f, ty)) { p_glTexSubImage2D(t, l, x, y, w, h, f, ty, px); return; }
+    p_glTexSubImage2D(t, l, x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    swizzleBgra(t);
 }
 // On some devices (OnePlus Nord, Android 12) LWJGL's dlopen of this library lands in a different
 // linker namespace than AWTContext's System.load(), so it gets a second copy with no nInit() state.
@@ -187,6 +215,13 @@ static void *resolve(const GLubyte *name) {
         }
         if (p_glShaderSource) return (void *) w_glShaderSource;
     }
+    if (!strcmp(n, "glTexImage2D") || !strcmp(n, "glTexSubImage2D")) {
+        if (!p_glTexImage2D) p_glTexImage2D = mgproc("glTexImage2D");
+        if (!p_glTexSubImage2D) p_glTexSubImage2D = mgproc("glTexSubImage2D");
+        if (!p_glTexParameteri) p_glTexParameteri = mgproc("glTexParameteri");
+        if (p_glTexImage2D && p_glTexSubImage2D && p_glTexParameteri && !getenv("RLAWT_NO_BGRA_SWIZZLE"))
+            return !strcmp(n, "glTexImage2D") ? (void *) w_glTexImage2D : (void *) w_glTexSubImage2D;
+    }
     if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
     if (!strcmp(n, "glRenderbufferStorageMultisample")) return (void *) w_glRenderbufferStorageMultisample;
     void *f = p_glXGetProcAddress(name);
@@ -220,6 +255,9 @@ JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     L(glRenderbufferStorageMultisample) L(glXGetProcAddress)
     p_glFenceSync = dlsym(mg, "glFenceSync"); p_glClientWaitSync = dlsym(mg, "glClientWaitSync"); p_glDeleteSync = dlsym(mg, "glDeleteSync");
     if (!p_glFenceSync || !p_glClientWaitSync || !p_glDeleteSync) { LOG("no sync objects, readback maps block"); p_glFenceSync = NULL; }
+    p_glBlitFramebuffer = dlsym(mg, "glBlitFramebuffer"); p_glIsEnabled = dlsym(mg, "glIsEnabled");
+    p_glEnable = dlsym(mg, "glEnable"); p_glDisable = dlsym(mg, "glDisable");
+    if (!p_glBlitFramebuffer || !p_glIsEnabled || !p_glEnable || !p_glDisable) p_glBlitFramebuffer = NULL;
     char buf[32]; snprintf(buf, sizeof buf, "%llx", (unsigned long long) (uintptr_t) resolve);
     setenv("RLAWT_RESOLVER", buf, 1);
     return JNI_TRUE;
@@ -281,8 +319,61 @@ JNIEXPORT jint JNICALL JF(nFramebuffer)(JNIEnv *env, jclass c, jint w, jint h) {
 // the microseconds spent waiting for the GPU (fence + map) / converting the frame into dst.
 static int64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t) t.tv_sec * 1000000 + t.tv_nsec / 1000; }
 
+// Preferred path: copy the finished frame on the GPU (glBlitFramebuffer, flipped) into a ring of
+// renderbuffers and read back the one copied two swaps ago, whose fence has normally signalled.
+// glReadPixels straight from the live FBO made the driver finish the whole frame first, so the
+// Client thread waited out the GPU's render time inside every swap (30-40% of its samples).
+static jint swapRing(JNIEnv *env, jintArray dst, jintArray outWH) {
+    GLint prevRead = 0, prevDraw = 0, prevPack = 0;
+    p_glGetIntegerv(0x8CAA, &prevRead); p_glGetIntegerv(0x8CA6, &prevDraw); p_glGetIntegerv(0x88ED, &prevPack);
+    GLboolean scissor = p_glIsEnabled(GL_SCISSOR_TEST);
+    if (scissor) p_glDisable(GL_SCISSOR_TEST);
+    if (!rFbo[cur]) { p_glGenFramebuffers(1, &rFbo[cur]); p_glGenRenderbuffers(1, &rRb[cur]); }
+    p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rFbo[cur]);
+    if (rW[cur] != fw || rH[cur] != fh) {
+        p_glBindRenderbuffer(GL_RENDERBUFFER, rRb[cur]); p_glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, fw, fh);
+        p_glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        p_glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rRb[cur]);
+        rW[cur] = fw; rH[cur] = fh;
+    }
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    p_glBlitFramebuffer(0, 0, fw, fh, 0, fh, fw, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (fence[cur]) p_glDeleteSync(fence[cur]);
+    fence[cur] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    p_glFlush();
+    int old = (cur + 1) % NPBO, filled = 0;
+    int64_t t0 = now_us(), t1 = t0, t2 = t0;
+    if (rW[old] > 0 && fence[old]) {
+        int w = rW[old], h = rH[old];
+        p_glClientWaitSync(fence[old], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        p_glDeleteSync(fence[old]); fence[old] = 0;
+        t1 = now_us();
+        size_t bytes = (size_t) w * h * 4;
+        if (stageCap < bytes) { free(stage); stage = malloc(bytes); stageCap = stage ? bytes : 0; }
+        if (stage && (*env)->GetArrayLength(env, dst) >= w * h) {
+            p_glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+            p_glBindFramebuffer(GL_READ_FRAMEBUFFER, rFbo[old]);
+            p_glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, stage);
+            const uint32_t *s = (const uint32_t *) stage;
+            jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
+            for (size_t i = 0, n = (size_t) w * h; i < n; i++) { uint32_t p = s[i]; out[i] = (jint) (((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF)); }
+            (*env)->ReleasePrimitiveArrayCritical(env, dst, out, 0);
+            t2 = now_us();
+            jint wh[2] = { w, h }; (*env)->SetIntArrayRegion(env, outWH, 0, 2, wh);
+            filled = 1;
+        }
+    }
+    if (scissor) p_glEnable(GL_SCISSOR_TEST);
+    p_glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPack);
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, prevRead); p_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevDraw);
+    cur = (cur + 1) % NPBO; frames++;
+    jint us[2] = { (jint) (t1 - t0), (jint) (t2 - t1) }; (*env)->SetIntArrayRegion(env, outWH, 2, 2, us);
+    return filled;
+}
+
 JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray outWH) {
     if (!fbo) return 0;
+    if (p_glBlitFramebuffer && p_glFenceSync && !getenv("RLAWT_PBO_READBACK")) return swapRing(env, dst, outWH);
     GLint prevRead = 0, prevPack = 0;
     p_glGetIntegerv(0x8CAA, &prevRead); p_glGetIntegerv(0x88ED, &prevPack);
     if (!pbo[0]) p_glGenBuffers(NPBO, pbo);
@@ -332,10 +423,13 @@ JNIEXPORT void JNICALL JF(nDestroy)(JNIEnv *env, jclass c) {
     if (ctx != EGL_NO_CONTEXT) {
         p_eglMakeCurrent(dpy, surf, surf, ctx);
         for (int i = 0; i < NPBO; i++) if (fence[i]) p_glDeleteSync(fence[i]);
+        for (int i = 0; i < NPBO; i++) if (rFbo[i]) { p_glDeleteFramebuffers(1, &rFbo[i]); p_glDeleteRenderbuffers(1, &rRb[i]); }
         if (fbo) { p_glDeleteFramebuffers(1, &fbo); GLuint rb[2] = { rbColor, rbDepth }; p_glDeleteRenderbuffers(2, rb); }
         p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         p_eglDestroySurface(dpy, surf); p_eglDestroyContext(dpy, ctx);
     }
     ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; fw = fh = 0; cur = frames = 0;
     memset(pbo, 0, sizeof pbo); memset(pboW, 0, sizeof pboW); memset(pboH, 0, sizeof pboH); memset(fence, 0, sizeof fence);
+    memset(rFbo, 0, sizeof rFbo); memset(rRb, 0, sizeof rRb); memset(rW, 0, sizeof rW); memset(rH, 0, sizeof rH);
+    free(stage); stage = NULL; stageCap = 0;
 }
