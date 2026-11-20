@@ -6,10 +6,10 @@ import java.util.Map;
 /**
  * Samples the Client thread's stack every 20 ms and logs, every 15 s, where it spent its time: the
  * top frames (a native GL call shows up as org.lwjgl...ngl*) and the first non-JDK code frame.
- * On by default in the FPS test builds; disable with -Drunelite.android.hotspots=false.
+ * Off by default; enable with -Drunelite.android.hotspots=true.
  */
 final class HotspotProfiler {
-    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("runelite.android.hotspots", "true"));
+    private static final boolean ENABLED = Boolean.getBoolean("runelite.android.hotspots");
     private static final long WINDOW_NS = 15_000_000_000L;
 
     private HotspotProfiler() {

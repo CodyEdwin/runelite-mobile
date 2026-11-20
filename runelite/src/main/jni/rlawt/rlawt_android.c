@@ -19,6 +19,7 @@ static EGLDisplay dpy = EGL_NO_DISPLAY; static EGLContext ctx = EGL_NO_CONTEXT; 
 #define NPBO 3
 static GLuint fbo, rbColor, rbDepth, pbo[NPBO]; static int fw, fh, pboW[NPBO], pboH[NPBO], cur, frames;
 static GLsync fence[NPBO];
+static GLsync rfence[NPBO];
 static GLuint rFbo[NPBO], rRb[NPBO]; static int rW[NPBO], rH[NPBO]; static uint8_t *stage; static size_t stageCap;
 
 #define F(ret, name, args) static ret (*p_##name) args;
@@ -320,7 +321,7 @@ JNIEXPORT jint JNICALL JF(nFramebuffer)(JNIEnv *env, jclass c, jint w, jint h) {
 static int64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t) t.tv_sec * 1000000 + t.tv_nsec / 1000; }
 
 // Preferred path: copy the finished frame on the GPU (glBlitFramebuffer, flipped) into a ring of
-// renderbuffers and read back the one copied two swaps ago, whose fence has normally signalled.
+// renderbuffers, have the GPU copy each into a PBO one swap later, and map it the swap after that.
 // glReadPixels straight from the live FBO made the driver finish the whole frame first, so the
 // Client thread waited out the GPU's render time inside every swap (30-40% of its samples).
 static jint swapRing(JNIEnv *env, jintArray dst, jintArray outWH) {
@@ -341,26 +342,49 @@ static jint swapRing(JNIEnv *env, jintArray dst, jintArray outWH) {
     if (fence[cur]) p_glDeleteSync(fence[cur]);
     fence[cur] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     p_glFlush();
-    int old = (cur + 1) % NPBO, filled = 0;
+    // Stage 2: the frame blitted last swap is finished on the GPU (normally): let the GPU copy it
+    // into its PBO. Reading a finished buffer doesn't stall; glReadPixels into client memory did
+    // (~15 ms, a CPU copy from tiled memory), so the copy stays on the GPU.
+    int prev = (cur + NPBO - 1) % NPBO, old = (cur + 1) % NPBO, filled = 0;
     int64_t t0 = now_us(), t1 = t0, t2 = t0;
-    if (rW[old] > 0 && fence[old]) {
-        int w = rW[old], h = rH[old];
-        p_glClientWaitSync(fence[old], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
-        p_glDeleteSync(fence[old]); fence[old] = 0;
+    if (rW[prev] > 0 && fence[prev]) {
+        p_glClientWaitSync(fence[prev], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        p_glDeleteSync(fence[prev]); fence[prev] = 0;
+        if (!pbo[0]) p_glGenBuffers(NPBO, pbo);
+        p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[prev]);
+        if (pboW[prev] != rW[prev] || pboH[prev] != rH[prev]) {
+            p_glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr) rW[prev] * rH[prev] * 4, NULL, GL_STREAM_READ);
+            pboW[prev] = rW[prev]; pboH[prev] = rH[prev];
+        }
+        p_glBindFramebuffer(GL_READ_FRAMEBUFFER, rFbo[prev]);
+        p_glReadPixels(0, 0, rW[prev], rH[prev], GL_RGBA, GL_UNSIGNED_BYTE, 0);
+        if (rfence[prev]) p_glDeleteSync(rfence[prev]);
+        rfence[prev] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        p_glFlush();
+    }
+    // Stage 3: map the PBO filled last swap (already flipped by the blit) and copy it out with wide
+    // loads (the mapping is uncached), swizzling in cache.
+    if (rfence[old] && pboW[old] > 0) {
+        int w = pboW[old], h = pboH[old];
+        p_glClientWaitSync(rfence[old], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+        p_glDeleteSync(rfence[old]); rfence[old] = 0;
         t1 = now_us();
-        size_t bytes = (size_t) w * h * 4;
-        if (stageCap < bytes) { free(stage); stage = malloc(bytes); stageCap = stage ? bytes : 0; }
-        if (stage && (*env)->GetArrayLength(env, dst) >= w * h) {
-            p_glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-            p_glBindFramebuffer(GL_READ_FRAMEBUFFER, rFbo[old]);
-            p_glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, stage);
-            const uint32_t *s = (const uint32_t *) stage;
-            jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
-            for (size_t i = 0, n = (size_t) w * h; i < n; i++) { uint32_t p = s[i]; out[i] = (jint) (((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF)); }
-            (*env)->ReleasePrimitiveArrayCritical(env, dst, out, 0);
-            t2 = now_us();
-            jint wh[2] = { w, h }; (*env)->SetIntArrayRegion(env, outWH, 0, 2, wh);
-            filled = 1;
+        if ((*env)->GetArrayLength(env, dst) >= w * h) {
+            p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[old]);
+            const uint8_t *src = p_glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr) w * h * 4, GL_MAP_READ_BIT);
+            if (src) {
+                jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
+                for (int y = 0; y < h; y++) {
+                    uint32_t *d = (uint32_t *) (out + (size_t) y * w);
+                    memcpy(d, src + (size_t) y * w * 4, (size_t) w * 4);
+                    for (int x = 0; x < w; x++) { uint32_t p = d[x]; d[x] = ((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF); }
+                }
+                (*env)->ReleasePrimitiveArrayCritical(env, dst, out, 0);
+                p_glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                t2 = now_us();
+                jint wh[2] = { w, h }; (*env)->SetIntArrayRegion(env, outWH, 0, 2, wh);
+                filled = 1;
+            }
         }
     }
     if (scissor) p_glEnable(GL_SCISSOR_TEST);
@@ -422,14 +446,14 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
 JNIEXPORT void JNICALL JF(nDestroy)(JNIEnv *env, jclass c) {
     if (ctx != EGL_NO_CONTEXT) {
         p_eglMakeCurrent(dpy, surf, surf, ctx);
-        for (int i = 0; i < NPBO; i++) if (fence[i]) p_glDeleteSync(fence[i]);
+        for (int i = 0; i < NPBO; i++) { if (fence[i]) p_glDeleteSync(fence[i]); if (rfence[i]) p_glDeleteSync(rfence[i]); }
         for (int i = 0; i < NPBO; i++) if (rFbo[i]) { p_glDeleteFramebuffers(1, &rFbo[i]); p_glDeleteRenderbuffers(1, &rRb[i]); }
         if (fbo) { p_glDeleteFramebuffers(1, &fbo); GLuint rb[2] = { rbColor, rbDepth }; p_glDeleteRenderbuffers(2, rb); }
         p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         p_eglDestroySurface(dpy, surf); p_eglDestroyContext(dpy, ctx);
     }
     ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; fw = fh = 0; cur = frames = 0;
-    memset(pbo, 0, sizeof pbo); memset(pboW, 0, sizeof pboW); memset(pboH, 0, sizeof pboH); memset(fence, 0, sizeof fence);
+    memset(pbo, 0, sizeof pbo); memset(pboW, 0, sizeof pboW); memset(pboH, 0, sizeof pboH); memset(fence, 0, sizeof fence); memset(rfence, 0, sizeof rfence);
     memset(rFbo, 0, sizeof rFbo); memset(rRb, 0, sizeof rRb); memset(rW, 0, sizeof rW); memset(rH, 0, sizeof rH);
     free(stage); stage = NULL; stageCap = 0;
 }
