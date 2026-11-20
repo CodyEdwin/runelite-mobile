@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
@@ -276,7 +277,10 @@ JNIEXPORT jint JNICALL JF(nFramebuffer)(JNIEnv *env, jclass c, jint w, jint h) {
 // Queue a read of the current FBO into PBO[cur]; copy the oldest queued frame (two swaps ago) into
 // dst. Two frames of slack let the GPU (tile-deferred on Adreno/Mali) finish a frame before the
 // CPU maps it, instead of the map stalling the Client thread until the GPU catches up.
-// Returns 1 if dst was filled (with a frame of size outWH[0] x outWH[1]).
+// Returns 1 if dst was filled (with a frame of size outWH[0] x outWH[1]). outWH[2] / outWH[3] get
+// the microseconds spent waiting for the GPU (fence + map) / converting the frame into dst.
+static int64_t now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t) t.tv_sec * 1000000 + t.tv_nsec / 1000; }
+
 JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray outWH) {
     if (!fbo) return 0;
     GLint prevRead = 0, prevPack = 0;
@@ -289,6 +293,7 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
     if (p_glFenceSync) { if (fence[cur]) p_glDeleteSync(fence[cur]); fence[cur] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
     p_glFlush();
     int old = (cur + 1) % NPBO, filled = 0;
+    int64_t t0 = now_us(), t1 = t0, t2 = t0;
     if (pboW[old] > 0) {
         int w = pboW[old], h = pboH[old];
         if (p_glFenceSync && fence[old]) {
@@ -298,6 +303,7 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
         if ((*env)->GetArrayLength(env, dst) >= w * h) {
             p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[old]);
             const uint8_t *src = p_glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr) w * h * 4, GL_MAP_READ_BIT);
+            t1 = now_us();
             if (src) {
                 jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
                 for (int y = 0; y < h; y++) {
@@ -307,6 +313,7 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
                 }
                 (*env)->ReleasePrimitiveArrayCritical(env, dst, out, 0);
                 p_glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                t2 = now_us();
                 jint wh[2] = { w, h }; (*env)->SetIntArrayRegion(env, outWH, 0, 2, wh);
                 filled = 1;
             } else if (frames < 5) LOG("glMapBufferRange failed 0x%x", p_glGetError());
@@ -315,6 +322,7 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
     p_glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPack);
     p_glBindFramebuffer(GL_READ_FRAMEBUFFER, prevRead);
     cur = (cur + 1) % NPBO; frames++;
+    jint us[2] = { (jint) (t1 - t0), (jint) (t2 - t1) }; (*env)->SetIntArrayRegion(env, outWH, 2, 2, us);
     return filled;
 }
 

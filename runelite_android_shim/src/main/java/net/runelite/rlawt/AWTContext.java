@@ -18,9 +18,12 @@ public final class AWTContext {
     private boolean created;
     private BufferedImage image;
     private int[] pixels = new int[0];
-    private final int[] wh = new int[2];
+    private final int[] wh = new int[4];
     private long fpsStart = System.nanoTime();
-    private int fpsFrames;
+    private int fpsFrames, swaps;
+    // Per-frame time split, summed over the stats window (ns): game + GL command submission between
+    // swaps, waiting for the GPU to finish the frame, converting it, and drawing it onto the canvas.
+    private long lastSwapEnd, gameNs, waitNs, copyNs, drawNs;
 
     public static synchronized void loadNatives() {
         if (nativesLoaded) return;
@@ -80,13 +83,23 @@ public final class AWTContext {
     public void swapBuffers() {
         // The native side writes the previous frame straight into the image's pixel array (the
         // frame size only changes on resize, when one frame is skipped to reallocate).
+        long t0 = System.nanoTime();
+        if (lastSwapEnd != 0) gameNs += t0 - lastSwapEnd;
+        swaps++;
         int cw = Math.max(1, component.getWidth()), ch = Math.max(1, component.getHeight());
         if (image == null || image.getWidth() != cw || image.getHeight() != ch) {
             image = new BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB);
             pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
         }
-        if (nSwap(pixels, wh) == 0 || wh[0] != cw || wh[1] != ch) return;
+        int filled = nSwap(pixels, wh);
+        waitNs += wh[2] * 1000L;
+        copyNs += wh[3] * 1000L;
+        if (filled == 0 || wh[0] != cw || wh[1] != ch) {
+            lastSwapEnd = System.nanoTime();
+            return;
+        }
         int w = wh[0], h = wh[1];
+        long t1 = System.nanoTime();
         Graphics g = component.getGraphics();
         if (g != null) {
             try {
@@ -97,10 +110,15 @@ public final class AWTContext {
         }
         fpsFrames++;
         long now = System.nanoTime();
+        drawNs += now - t1;
+        lastSwapEnd = now;
         if (now - fpsStart >= 5_000_000_000L) {
-            System.out.printf("GPU mode: %.1f frames/s presented (%dx%d)%n", fpsFrames * 1e9 / (now - fpsStart), w, h);
+            double n = Math.max(1, swaps) * 1e6;
+            System.out.printf("GPU mode: %.1f frames/s presented (%dx%d); ms/frame: game+GL %.1f, GPU wait %.1f, readback %.1f, canvas draw %.1f%n",
+                    fpsFrames * 1e9 / (now - fpsStart), w, h, gameNs / n, waitNs / n, copyNs / n, drawNs / n);
             fpsStart = now;
-            fpsFrames = 0;
+            fpsFrames = swaps = 0;
+            gameNs = waitNs = copyNs = drawNs = 0;
         }
     }
 
