@@ -306,10 +306,12 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
             t1 = now_us();
             if (src) {
                 jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
+                // The mapped PBO is uncached on mobile GPUs: per-pixel loads from it cost ~15 ms a
+                // frame. Copy each row out with memcpy's wide loads first, then swizzle in cache.
                 for (int y = 0; y < h; y++) {
-                    const uint32_t *s = (const uint32_t *) (src + (size_t) (h - 1 - y) * w * 4);
-                    jint *d = out + (size_t) y * w;
-                    for (int x = 0; x < w; x++) { uint32_t p = s[x]; d[x] = (jint) (((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF)); }
+                    uint32_t *d = (uint32_t *) (out + (size_t) y * w);
+                    memcpy(d, src + (size_t) (h - 1 - y) * w * 4, (size_t) w * 4);
+                    for (int x = 0; x < w; x++) { uint32_t p = d[x]; d[x] = ((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF); }
                 }
                 (*env)->ReleasePrimitiveArrayCritical(env, dst, out, 0);
                 p_glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
