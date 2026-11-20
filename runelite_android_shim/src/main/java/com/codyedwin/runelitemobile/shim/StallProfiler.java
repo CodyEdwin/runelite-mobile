@@ -64,7 +64,7 @@ public final class StallProfiler {
         }
     }
 
-    private static boolean interesting(String f) {
+    static boolean interesting(String f) {
         if (f.startsWith("java.") || f.startsWith("jdk.") || f.startsWith("sun.") || f.startsWith("com.google.")
                 || f.startsWith("net.runelite.client.eventbus.") || f.startsWith("net.runelite.client.callback.")
                 || f.startsWith("com.codyedwin.")) return false;
