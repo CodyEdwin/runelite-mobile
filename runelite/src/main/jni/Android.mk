@@ -62,7 +62,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := pojavexec_awt
 LOCAL_SRC_FILES := \
     awt_bridge.c
-LOCAL_LDLIBS := -ljnigraphics -llog
+LOCAL_LDLIBS := -ljnigraphics -landroid -llog
 LOCAL_CFLAGS += -O3
 include $(BUILD_SHARED_LIBRARY)
 

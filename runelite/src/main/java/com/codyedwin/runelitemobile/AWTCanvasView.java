@@ -226,6 +226,64 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         sFastBlit = enabled;
     }
 
+    /**
+     * Fastest path: native code converts the screen straight into the Surface's buffer and posts it
+     * (no Bitmap copy, no texture upload). Falls back to {@link #runFast} if no ANativeWindow.
+     */
+    private boolean runDirect() {
+        Surface surface = new Surface(getSurfaceTexture());
+        long window = JREUtils.nativeWindowFromSurface(surface);
+        if (window == 0) {
+            surface.release();
+            return false;
+        }
+        int canvasWidth = getCanvasWidth();
+        int canvasHeight = getCanvasHeight();
+        long statsStart = System.nanoTime();
+        int posted = 0, polls = 0;
+        boolean force = true;
+        com.codyedwin.runelitemobile.utils.ThreadPlacement.placeRenderThread();
+        try {
+            while (isCurrentRenderer() && surface.isValid()) {
+                polls++;
+                if (sForceFrame) { sForceFrame = false; force = true; }
+                int r = JREUtils.renderAWTScreenFrameToWindow(window, canvasWidth, canvasHeight, force);
+                if (r < 0) {
+                    if (-r == getCanvasWidth() * getCanvasHeight()) {
+                        canvasWidth = getCanvasWidth();
+                        canvasHeight = getCanvasHeight();
+                        post(() -> updateFitTransform(getWidth(), getHeight()));
+                        Log.i("AWTCanvasView", "virtual screen resized to " + canvasWidth + "x" + canvasHeight);
+                        force = true;
+                    } else {
+                        Thread.sleep(16);
+                    }
+                    continue;
+                }
+                if (r == 0) {
+                    Thread.sleep(4);
+                } else {
+                    force = false;
+                    posted++;
+                }
+                long now = System.nanoTime();
+                if (now - statsStart >= 5_000_000_000L) {
+                    Log.i("AWTCanvasView", String.format(java.util.Locale.ROOT, "direct blit: %.1f frames/s posted, %.0f polls/s",
+                            posted * 1e9 / (now - statsStart), polls * 1e9 / (now - statsStart)));
+                    statsStart = now;
+                    posted = 0;
+                    polls = 0;
+                    com.codyedwin.runelitemobile.utils.ThreadPlacement.placeGameThreads();
+                }
+            }
+        } catch (Throwable throwable) {
+            Tools.showError(getContext(), throwable);
+        }
+        JREUtils.nativeWindowRelease(window);
+        surface.release();
+        return true;
+    }
+
     private void runFast() {
         int canvasWidth = getCanvasWidth();
         int canvasHeight = getCanvasHeight();
@@ -318,7 +376,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     @Override
     public void run() {
         if (sFastBlit) {
-            runFast();
+            if (!runDirect()) runFast();
             return;
         }
         Canvas canvas;

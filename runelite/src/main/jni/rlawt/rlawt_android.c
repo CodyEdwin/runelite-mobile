@@ -1,6 +1,6 @@
 // RuneLite Mobile GPU mode: offscreen replacement for RuneLite's rlawt.
 // Creates an EGL (GLES3) pbuffer context through MobileGlues (desktop GL on GLES), renders the
-// GPU plugin into an FBO and reads frames back asynchronously (2 PBOs, one frame latency)
+// GPU plugin into an FBO and reads frames back asynchronously (3 PBOs, two frames latency)
 // into a Java int[] (0x00RRGGBB, top-down) that the Java side draws onto the AWT canvas.
 #include <jni.h>
 #include <dlfcn.h>
@@ -15,7 +15,9 @@
 
 static void *mg;
 static EGLDisplay dpy = EGL_NO_DISPLAY; static EGLContext ctx = EGL_NO_CONTEXT; static EGLSurface surf = EGL_NO_SURFACE;
-static GLuint fbo, rbColor, rbDepth, pbo[2]; static int fw, fh, pboW[2], pboH[2], cur, frames;
+#define NPBO 3
+static GLuint fbo, rbColor, rbDepth, pbo[NPBO]; static int fw, fh, pboW[NPBO], pboH[NPBO], cur, frames;
+static GLsync fence[NPBO];
 
 #define F(ret, name, args) static ret (*p_##name) args;
 F(EGLDisplay, eglGetDisplay, (EGLNativeDisplayType)) F(EGLBoolean, eglInitialize, (EGLDisplay, EGLint*, EGLint*))
@@ -37,6 +39,8 @@ F(void*, glMapBufferRange, (GLenum, GLintptr, GLsizeiptr, GLbitfield)) F(GLboole
 F(void, glReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*)) F(void, glFlush, (void))
 F(void, glRenderbufferStorageMultisample, (GLenum, GLsizei, GLenum, GLsizei, GLsizei))
 F(void*, glXGetProcAddress, (const GLubyte*))
+F(GLsync, glFenceSync, (GLenum, GLbitfield)) F(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64))
+F(void, glDeleteSync, (GLsync))
 #undef F
 #define L(name) if (!(p_##name = dlsym(mg, #name))) { LOG("missing %s", #name); return JNI_FALSE; }
 
@@ -213,6 +217,8 @@ JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     L(glDeleteFramebuffers) L(glDeleteRenderbuffers) L(glGenBuffers) L(glBindBuffer) L(glBufferData)
     L(glMapBufferRange) L(glUnmapBuffer) L(glReadPixels) L(glFlush)
     L(glRenderbufferStorageMultisample) L(glXGetProcAddress)
+    p_glFenceSync = dlsym(mg, "glFenceSync"); p_glClientWaitSync = dlsym(mg, "glClientWaitSync"); p_glDeleteSync = dlsym(mg, "glDeleteSync");
+    if (!p_glFenceSync || !p_glClientWaitSync || !p_glDeleteSync) { LOG("no sync objects, readback maps block"); p_glFenceSync = NULL; }
     char buf[32]; snprintf(buf, sizeof buf, "%llx", (unsigned long long) (uintptr_t) resolve);
     setenv("RLAWT_RESOLVER", buf, 1);
     return JNI_TRUE;
@@ -267,23 +273,30 @@ JNIEXPORT jint JNICALL JF(nFramebuffer)(JNIEnv *env, jclass c, jint w, jint h) {
     return (jint) fbo;
 }
 
-// Queue a read of the current FBO into PBO[cur]; copy the previous frame's PBO into dst.
+// Queue a read of the current FBO into PBO[cur]; copy the oldest queued frame (two swaps ago) into
+// dst. Two frames of slack let the GPU (tile-deferred on Adreno/Mali) finish a frame before the
+// CPU maps it, instead of the map stalling the Client thread until the GPU catches up.
 // Returns 1 if dst was filled (with a frame of size outWH[0] x outWH[1]).
 JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray outWH) {
     if (!fbo) return 0;
     GLint prevRead = 0, prevPack = 0;
     p_glGetIntegerv(0x8CAA, &prevRead); p_glGetIntegerv(0x88ED, &prevPack);
-    if (!pbo[0]) p_glGenBuffers(2, pbo);
+    if (!pbo[0]) p_glGenBuffers(NPBO, pbo);
     p_glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[cur]);
     if (pboW[cur] != fw || pboH[cur] != fh) { p_glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr) fw * fh * 4, NULL, GL_STREAM_READ); pboW[cur] = fw; pboH[cur] = fh; }
     p_glReadPixels(0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    if (p_glFenceSync) { if (fence[cur]) p_glDeleteSync(fence[cur]); fence[cur] = p_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
     p_glFlush();
-    int prev = cur ^ 1, filled = 0;
-    if (pboW[prev] > 0) {
-        int w = pboW[prev], h = pboH[prev];
+    int old = (cur + 1) % NPBO, filled = 0;
+    if (pboW[old] > 0) {
+        int w = pboW[old], h = pboH[old];
+        if (p_glFenceSync && fence[old]) {
+            p_glClientWaitSync(fence[old], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            p_glDeleteSync(fence[old]); fence[old] = 0;
+        }
         if ((*env)->GetArrayLength(env, dst) >= w * h) {
-            p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[prev]);
+            p_glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[old]);
             const uint8_t *src = p_glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr) w * h * 4, GL_MAP_READ_BIT);
             if (src) {
                 jint *out = (*env)->GetPrimitiveArrayCritical(env, dst, 0);
@@ -301,17 +314,18 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
     }
     p_glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPack);
     p_glBindFramebuffer(GL_READ_FRAMEBUFFER, prevRead);
-    cur = prev; frames++;
+    cur = (cur + 1) % NPBO; frames++;
     return filled;
 }
 
 JNIEXPORT void JNICALL JF(nDestroy)(JNIEnv *env, jclass c) {
     if (ctx != EGL_NO_CONTEXT) {
         p_eglMakeCurrent(dpy, surf, surf, ctx);
+        for (int i = 0; i < NPBO; i++) if (fence[i]) p_glDeleteSync(fence[i]);
         if (fbo) { p_glDeleteFramebuffers(1, &fbo); GLuint rb[2] = { rbColor, rbDepth }; p_glDeleteRenderbuffers(2, rb); }
         p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         p_eglDestroySurface(dpy, surf); p_eglDestroyContext(dpy, ctx);
     }
-    ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; pbo[0] = pbo[1] = 0;
-    pboW[0] = pboW[1] = pboH[0] = pboH[1] = 0; fw = fh = 0; cur = frames = 0;
+    ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; fw = fh = 0; cur = frames = 0;
+    memset(pbo, 0, sizeof pbo); memset(pboW, 0, sizeof pboW); memset(pboH, 0, sizeof pboH); memset(fence, 0, sizeof fence);
 }

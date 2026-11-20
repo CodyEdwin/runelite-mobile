@@ -7,6 +7,8 @@
 #include <sched.h>
 #include <sys/syscall.h>
 #include <android/bitmap.h>
+#include <android/native_window_jni.h>
+#include <stdint.h>
 
 static JavaVM* dalvikJavaVMPtr;
 
@@ -151,61 +153,131 @@ static jobject screenLockGlobal = NULL;
  * a new 3 MB Android int[] every frame, Bitmap#setPixels) which used ~75% of a big core plus ART GC
  * time on the same core as the game's Client thread.
  */
-JNIEXPORT jint JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_renderAWTScreenFrameToBitmap(JNIEnv* env, jclass clazz, jobject bitmap, jboolean force) {
+static int ensure_screen_methods(JNIEnv* jre) {
+    if (method_GetPixelsIfChanged != NULL) return 1;
+    jclass cls = (*jre)->FindClass(jre, "com/github/caciocavallosilano/cacio/ctc/CTCScreen");
+    if (cls == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); return 0; }
+    jmethodID m = (*jre)->GetStaticMethodID(jre, cls, "getScreenPixelsIfChanged", "(Z)[I");
+    jfieldID f = m == NULL ? NULL : (*jre)->GetStaticFieldID(jre, cls, "SCREEN_LOCK", "Ljava/lang/Object;");
+    if (m == NULL || f == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); (*jre)->DeleteLocalRef(jre, cls); return 0; }
+    jobject lock = (*jre)->GetStaticObjectField(jre, cls, f);
+    screenLockGlobal = (*jre)->NewGlobalRef(jre, lock);
+    (*jre)->DeleteLocalRef(jre, lock);
+    class_CTCScreenGlobal = (*jre)->NewGlobalRef(jre, cls);
+    (*jre)->DeleteLocalRef(jre, cls);
+    method_GetPixelsIfChanged = m;
+    return 1;
+}
+
+static JNIEnv* screen_env(void) {
     if (runtimeJNIEnvPtr_GRAPHICS == NULL) {
-        if (runtimeJavaVMPtr == NULL) return 0;
+        if (runtimeJavaVMPtr == NULL) return NULL;
         (*runtimeJavaVMPtr)->AttachCurrentThread(runtimeJavaVMPtr, &runtimeJNIEnvPtr_GRAPHICS, NULL);
     }
     JNIEnv* jre = runtimeJNIEnvPtr_GRAPHICS;
-    if (method_GetPixelsIfChanged == NULL) {
-        jclass cls = (*jre)->FindClass(jre, "com/github/caciocavallosilano/cacio/ctc/CTCScreen");
-        if (cls == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); return 0; }
-        jmethodID m = (*jre)->GetStaticMethodID(jre, cls, "getScreenPixelsIfChanged", "(Z)[I");
-        jfieldID f = m == NULL ? NULL : (*jre)->GetStaticFieldID(jre, cls, "SCREEN_LOCK", "Ljava/lang/Object;");
-        if (m == NULL || f == NULL || (*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); (*jre)->DeleteLocalRef(jre, cls); return 0; }
-        jobject lock = (*jre)->GetStaticObjectField(jre, cls, f);
-        screenLockGlobal = (*jre)->NewGlobalRef(jre, lock);
-        (*jre)->DeleteLocalRef(jre, lock);
-        class_CTCScreenGlobal = (*jre)->NewGlobalRef(jre, cls);
-        (*jre)->DeleteLocalRef(jre, cls);
-        method_GetPixelsIfChanged = m;
-    }
-    AndroidBitmapInfo info;
-    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS
-            || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) return 0;
+    return jre != NULL && ensure_screen_methods(jre) ? jre : NULL;
+}
 
+/* 0x??RRGGBB screen pixels -> RGBA bytes (0xFFBBGGRR), opaque. dstStride in pixels. */
+static void convert_screen(const uint32_t* src, uint32_t* dst, uint32_t w, uint32_t h, size_t dstStride) {
+    for (uint32_t y = 0; y < h; y++) {
+        const uint32_t* s = src + (size_t) y * w;
+        uint32_t* d = dst + (size_t) y * dstStride;
+        for (uint32_t x = 0; x < w; x++) {
+            uint32_t p = s[x];
+            d[x] = 0xFF000000u | (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16);
+        }
+    }
+}
+
+typedef int (*screen_sink)(void* target, const uint32_t* src, uint32_t w, uint32_t h);
+
+/*
+ * Under SCREEN_LOCK: if the cacio screen changed (or force), hand its pixels to sink.
+ * Returns the sink's result (1 posted, 0 nothing), 0 when unchanged/not ready, and -N
+ * (N = pixel count of the screen) when the target is not w x h.
+ */
+static jint with_screen_pixels(jboolean force, uint32_t w, uint32_t h, screen_sink sink, void* target) {
+    JNIEnv* jre = screen_env();
+    if (jre == NULL) return 0;
     jint result = 0;
     (*jre)->MonitorEnter(jre, screenLockGlobal);
     jintArray pixels = (jintArray) (*jre)->CallStaticObjectMethod(jre, class_CTCScreenGlobal, method_GetPixelsIfChanged, force);
     if ((*jre)->ExceptionCheck(jre)) { (*jre)->ExceptionClear(jre); pixels = NULL; }
     if (pixels != NULL) {
         jsize length = (*jre)->GetArrayLength(jre, pixels);
-        if ((jsize) (info.width * info.height) != length) {
+        if ((jsize) (w * h) != length) {
             result = -length;
         } else {
-            void* dst = NULL;
-            if (AndroidBitmap_lockPixels(env, bitmap, &dst) == ANDROID_BITMAP_RESULT_SUCCESS) {
-                const uint32_t* src = (*jre)->GetPrimitiveArrayCritical(jre, pixels, NULL);
-                if (src != NULL) {
-                    const uint32_t w = info.width, h = info.height;
-                    for (uint32_t y = 0; y < h; y++) {
-                        const uint32_t* s = src + (size_t) y * w;
-                        uint32_t* d = (uint32_t*) ((char*) dst + (size_t) y * info.stride);
-                        for (uint32_t x = 0; x < w; x++) {
-                            uint32_t p = s[x]; /* 0xAARRGGBB -> RGBA bytes (0xAABBGGRR), opaque */
-                            d[x] = 0xFF000000u | (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16);
-                        }
-                    }
-                    (*jre)->ReleasePrimitiveArrayCritical(jre, pixels, (void*) src, JNI_ABORT);
-                    result = 1;
-                }
-                AndroidBitmap_unlockPixels(env, bitmap);
+            const uint32_t* src = (*jre)->GetPrimitiveArrayCritical(jre, pixels, NULL);
+            if (src != NULL) {
+                result = sink(target, src, w, h);
+                (*jre)->ReleasePrimitiveArrayCritical(jre, pixels, (void*) src, JNI_ABORT);
             }
         }
         (*jre)->DeleteLocalRef(jre, pixels);
     }
     (*jre)->MonitorExit(jre, screenLockGlobal);
     return result;
+}
+
+typedef struct { JNIEnv* env; jobject bitmap; uint32_t stride; } bitmap_target;
+
+static int bitmap_sink(void* target, const uint32_t* src, uint32_t w, uint32_t h) {
+    bitmap_target* t = target;
+    void* dst = NULL;
+    if (AndroidBitmap_lockPixels(t->env, t->bitmap, &dst) != ANDROID_BITMAP_RESULT_SUCCESS) return 0;
+    convert_screen(src, dst, w, h, t->stride / 4);
+    AndroidBitmap_unlockPixels(t->env, t->bitmap);
+    return 1;
+}
+
+/*
+ * Copy the cacio screen straight into an Android ARGB_8888 bitmap, only when it changed.
+ * Returns 1 when the bitmap was updated, 0 when the screen is unchanged (or not ready), and -N
+ * (N = pixel count of the screen) when the bitmap does not match the screen size.
+ */
+JNIEXPORT jint JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_renderAWTScreenFrameToBitmap(JNIEnv* env, jclass clazz, jobject bitmap, jboolean force) {
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS
+            || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) return 0;
+    bitmap_target t = { env, bitmap, info.stride };
+    return with_screen_pixels(force, info.width, info.height, bitmap_sink, &t);
+}
+
+JNIEXPORT jlong JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_nativeWindowFromSurface(JNIEnv* env, jclass clazz, jobject surface) {
+    return (jlong) (intptr_t) ANativeWindow_fromSurface(env, surface);
+}
+
+JNIEXPORT void JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_nativeWindowRelease(JNIEnv* env, jclass clazz, jlong window) {
+    if (window != 0) ANativeWindow_release((ANativeWindow*) (intptr_t) window);
+}
+
+static int window_sink(void* target, const uint32_t* src, uint32_t w, uint32_t h) {
+    ANativeWindow* window = target;
+    ANativeWindow_Buffer buffer;
+    if (ANativeWindow_lock(window, &buffer, NULL) != 0) return 0;
+    if ((uint32_t) buffer.width >= w && (uint32_t) buffer.height >= h) {
+        convert_screen(src, buffer.bits, w, h, (size_t) buffer.stride);
+    }
+    ANativeWindow_unlockAndPost(window);
+    return 1;
+}
+
+/*
+ * Same as renderAWTScreenFrameToBitmap, but converts straight into the Surface's next buffer and
+ * posts it: no Bitmap, no hardware-canvas texture upload. The buffer geometry is pinned to the
+ * screen size, so TextureView resetting its default buffer size cannot shrink the picture.
+ */
+JNIEXPORT jint JNICALL Java_com_codyedwin_runelitemobile_utils_JREUtils_renderAWTScreenFrameToWindow(JNIEnv* env, jclass clazz, jlong windowPtr, jint width, jint height, jboolean force) {
+    ANativeWindow* window = (ANativeWindow*) (intptr_t) windowPtr;
+    if (window == NULL || width <= 0 || height <= 0) return 0;
+    if (ANativeWindow_getWidth(window) != width || ANativeWindow_getHeight(window) != height
+            || ANativeWindow_getFormat(window) != WINDOW_FORMAT_RGBX_8888) {
+        if (ANativeWindow_setBuffersGeometry(window, width, height, WINDOW_FORMAT_RGBX_8888) != 0) return 0;
+        force = JNI_TRUE;
+    }
+    return with_screen_pixels(force, (uint32_t) width, (uint32_t) height, window_sink, window);
 }
 
 /* sched_setaffinity for a thread of this process (tid), mask = bit per CPU. */

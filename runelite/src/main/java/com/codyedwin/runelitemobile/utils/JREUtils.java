@@ -470,6 +470,11 @@ public class JREUtils {
     public static native int[] renderAWTScreenFrame(/* Object canvas, int width, int height */);
     /** @return 1 updated, 0 unchanged/not ready, -N screen has N pixels (bitmap size mismatch) */
     public static native int renderAWTScreenFrameToBitmap(android.graphics.Bitmap bitmap, boolean force);
+    /** ANativeWindow for a Surface (0 on failure); release with {@link #nativeWindowRelease}. */
+    public static native long nativeWindowFromSurface(android.view.Surface surface);
+    public static native void nativeWindowRelease(long window);
+    /** Like {@link #renderAWTScreenFrameToBitmap}, but straight into the window's next buffer (posted). */
+    public static native int renderAWTScreenFrameToWindow(long window, int width, int height, boolean force);
     public static native int setThreadAffinity(int tid, long mask);
 
     /** Largest heap that leaves the rest of the phone room to breathe: 60% of RAM, at least 768 MB. */
