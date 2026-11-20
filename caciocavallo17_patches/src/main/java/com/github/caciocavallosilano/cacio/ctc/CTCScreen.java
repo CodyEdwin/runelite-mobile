@@ -1,7 +1,6 @@
 /*
  * Patched copy of caciocavallo 1.18 CTCScreen (decompiled): adds SCREEN_LOCK so the Android blitter
- * never copies the screen while Swing is in the middle of painting a batch of dirty regions, and
- * uses an opaque INT_RGB screen buffer.
+ * never copies the screen while Swing is in the middle of painting a batch of dirty regions.
  */
 package com.github.caciocavallosilano.cacio.ctc;
 
@@ -42,9 +41,7 @@ implements PlatformScreen {
 
     private CTCScreen() {
         Dimension d = FullScreenWindowFactory.getScreenDimension();
-        // Opaque RGB: the game's frames (also INT_RGB) are then drawn with a plain copy instead of a
-        // per-pixel RGB->ARGB conversion on the Client thread. The screen itself is never translucent.
-        this.screenBuffer = new BufferedImage(d.width, d.height, BufferedImage.TYPE_INT_RGB);
+        this.screenBuffer = new BufferedImage(d.width, d.height, BufferedImage.TYPE_INT_ARGB);
     }
 
     @Override

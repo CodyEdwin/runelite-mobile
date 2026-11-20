@@ -230,6 +230,9 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
      * Fastest path: native code converts the screen straight into the Surface's buffer and posts it
      * (no Bitmap copy, no texture upload). Falls back to {@link #runFast} if no ANativeWindow.
      */
+    private static final boolean sDirectBlit = false;
+    private static final boolean PERF_LOG = false;
+
     private boolean runDirect() {
         Surface surface = new Surface(getSurfaceTexture());
         long window = JREUtils.nativeWindowFromSurface(surface);
@@ -267,7 +270,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                     posted++;
                 }
                 long now = System.nanoTime();
-                if (now - statsStart >= 5_000_000_000L) {
+                if (PERF_LOG && now - statsStart >= 5_000_000_000L) {
                     Log.i("AWTCanvasView", String.format(java.util.Locale.ROOT, "direct blit: %.1f frames/s posted, %.0f polls/s",
                             posted * 1e9 / (now - statsStart), polls * 1e9 / (now - statsStart)));
                     statsStart = now;
@@ -331,7 +334,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                     posted++;
                 }
                 long now = System.nanoTime();
-                if (now - statsStart >= 5_000_000_000L) {
+                if (PERF_LOG && now - statsStart >= 5_000_000_000L) {
                     Log.i("AWTCanvasView", String.format(java.util.Locale.ROOT, "blit: %.1f frames/s posted, %.0f polls/s",
                             posted * 1e9 / (now - statsStart), polls * 1e9 / (now - statsStart)));
                     statsStart = now;
@@ -376,7 +379,8 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     @Override
     public void run() {
         if (sFastBlit) {
-            if (!runDirect()) runFast();
+            // runDirect (ANativeWindow) measured slower in software mode on a OnePlus Nord: opt-in only.
+            if (!sDirectBlit || !runDirect()) runFast();
             return;
         }
         Canvas canvas;

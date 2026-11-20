@@ -8,6 +8,7 @@ final class FpsLog {
     }
 
     static void install() {
+        if (!Boolean.getBoolean("runelite.android.perflog")) return;
         Thread t = new Thread(() -> {
             Object client = null;
             Method getFps = null;

@@ -13,6 +13,7 @@ import java.awt.image.DataBufferInt;
  * Same public API as the real class so RuneLite's GPU plugin links against it unchanged.
  */
 public final class AWTContext {
+    private static final boolean PERF_LOG = Boolean.getBoolean("runelite.android.perflog");
     private static boolean nativesLoaded;
     private final Component component;
     private boolean created;
@@ -112,7 +113,7 @@ public final class AWTContext {
         long now = System.nanoTime();
         drawNs += now - t1;
         lastSwapEnd = now;
-        if (now - fpsStart >= 5_000_000_000L) {
+        if (PERF_LOG && now - fpsStart >= 5_000_000_000L) {
             double n = Math.max(1, swaps) * 1e6;
             System.out.printf("GPU mode: %.1f frames/s presented (%dx%d); ms/frame: game+GL %.1f, GPU wait %.1f, readback %.1f, canvas draw %.1f%n",
                     fpsFrames * 1e9 / (now - fpsStart), w, h, gameNs / n, waitNs / n, copyNs / n, drawNs / n);

@@ -43,6 +43,9 @@ import java.util.List;
 /** RuneLite Mobile's own start screen: profile, toggles, plugins, updates, settings and PLAY. */
 public class RuneLiteMobileActivity extends AppCompatActivity {
     private static final int REQUEST_IMPORT_PLUGIN = 4101;
+    private static final int REQUEST_IMPORT_PROFILE = 4102;
+    private static final int REQUEST_EXPORT_PROFILE = 4103;
+    private RuneLiteProfiles.Profile exporting;
     private static final int ORANGE = 0xFFDC8A00;
     private static final int PANEL = 0xFF2B2B2B;
 
@@ -158,6 +161,19 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
             }
         });
 
+        LinearLayout profileActions = new LinearLayout(this);
+        profileActions.setOrientation(LinearLayout.HORIZONTAL);
+        View importProfile = action("Import profile", v -> importProfile());
+        View exportProfile = action("Export profile", v -> exportProfile());
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        half.topMargin = dp(8);
+        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        half2.topMargin = dp(8);
+        half2.leftMargin = dp(8);
+        profileActions.addView(importProfile, half);
+        profileActions.addView(exportProfile, half2);
+        left.addView(profileActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         play = new Button(this);
         play.setText("PLAY");
         play.setTextColor(Color.WHITE);
@@ -192,6 +208,13 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         right.addView(action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
         right.addView(action("Import plugin (.jar)", v -> importPlugin()));
         right.addView(action("Open game directory", v -> Tools.openPath(this, Tools.getRuneLiteDir(), false)));
+        right.addView(action("Open .runelite folder (settings, profiles)", v -> {
+            File dotRuneLite = new File(Tools.getRuneLiteDir(), ".runelite");
+            //noinspection ResultOfMethodCallIgnored
+            dotRuneLite.mkdirs();
+            Tools.openPath(this, dotRuneLite, false);
+        }));
+        right.addView(action("Dev plugins: /sdcard/RuneLite/plugins", v -> sdcardPlugins()));
         right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
         right.addView(action("Settings (memory)", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
         right.addView(action("Share log file", v -> Tools.shareLog(this)));
@@ -425,6 +448,83 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void sdcardPlugins() {
+        if (!Tools.hasAllFilesAccess()) {
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Allow all files access")
+                    .setMessage("Jars in /sdcard/RuneLite/plugins load at every launch (normal and custom mode). "
+                            + "Android needs \"All files access\" for that folder.")
+                    .setPositiveButton("Allow", (d, w) -> {
+                        try {
+                            startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                    Uri.parse("package:" + getPackageName())));
+                        } catch (Exception e) {
+                            startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return;
+        }
+        File dir = Tools.getSdcardPluginDir();
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        File[] jars = dir.listFiles((d, name) -> name.endsWith(".jar"));
+        Toast.makeText(this, (jars == null ? 0 : jars.length) + " jar(s) in " + dir + " load on PLAY", Toast.LENGTH_LONG).show();
+    }
+
+    private void importProfile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_PROFILE);
+    }
+
+    private void exportProfile() {
+        Object item = profileSpinner.getSelectedItem();
+        if (!(item instanceof RuneLiteProfiles.Profile) || ((RuneLiteProfiles.Profile) item).id < 0
+                || !((RuneLiteProfiles.Profile) item).configFile().isFile()) {
+            Toast.makeText(this, "This profile has no saved settings yet. Play once first.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        exporting = (RuneLiteProfiles.Profile) item;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, exporting.name + ".properties");
+        startActivityForResult(intent, REQUEST_EXPORT_PROFILE);
+    }
+
+    private void onProfileResult(int requestCode, Uri uri) {
+        try {
+            if (requestCode == REQUEST_EXPORT_PROFILE) {
+                if (exporting == null) return;
+                try (InputStream in = new java.io.FileInputStream(exporting.configFile());
+                     java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                    IOUtils.copy(in, out);
+                }
+                Toast.makeText(this, "Exported " + exporting.name, Toast.LENGTH_LONG).show();
+                exporting = null;
+            } else {
+                String name = null;
+                try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                    if (c != null && c.moveToFirst()) name = c.getString(0);
+                }
+                if (name == null) name = "Imported Profile";
+                if (name.toLowerCase(java.util.Locale.ROOT).endsWith(".properties")) name = name.substring(0, name.length() - 11);
+                String added;
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    added = RuneLiteProfiles.importProfile(name, in);
+                }
+                prefs.edit().putString(LauncherPreferences.PREF_KEY_RUNELITE_PROFILE, added).apply();
+                loadProfiles();
+                Toast.makeText(this, "Imported profile \"" + added + "\"", Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            Tools.showError(this, e);
+        }
+    }
+
     private void importPlugin() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -436,6 +536,11 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if ((requestCode == REQUEST_IMPORT_PROFILE || requestCode == REQUEST_EXPORT_PROFILE)
+                && resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+            onProfileResult(requestCode, data.getData());
+            return;
+        }
         if (requestCode != REQUEST_IMPORT_PLUGIN || resultCode != Activity.RESULT_OK || data == null) return;
         int count = 0;
         try {

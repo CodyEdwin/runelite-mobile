@@ -4,7 +4,7 @@
 
 <p align="center">
 The <a href="https://runelite.net">RuneLite</a> Old School RuneScape client running natively on Android phones and tablets,<br>
-with GPU rendering, 117 HD, the Plugin Hub and sideloaded plugins.
+with GPU rendering, the Plugin Hub, sideloaded plugins and an optional custom RuneLite build.
 </p>
 
 <p align="center"><img src="docs/images/ingame-plugins.png" width="800" alt="RuneLite running on Android with the plugin panel open"></p>
@@ -24,11 +24,18 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
 - **117 HD support**: in GPU mode the 117 HD plugin is installed from the Plugin Hub automatically
   (once per profile). Only one renderer runs at a time, and if 117 HD fails it falls back to the
   stock GPU plugin.
+- **Profile import/export**: *Import profile* / *Export profile* under the profile picker copy
+  RuneLite `.properties` profiles in and out without opening RuneLite.
 - **Plugin Hub**: browse and install Hub plugins in-game as on desktop.
 - **Sideloaded plugins**: bundled plugin jars plus your own, imported with *Import plugin (.jar)*
   or shared to the app from a file manager. *Choose sideloaded plugins* opens a list where each one
   can be switched on or off individually; switched-off plugins are skipped on the next PLAY, nothing
   is deleted. A master *Load sideloaded plugins* toggle turns them all off.
+- **Dev plugins folder**: jars in `/sdcard/RuneLite/plugins` load on every PLAY, in normal and
+  custom mode, so you can build a plugin, copy the jar there and restart the game without rebuilding
+  the APK. Needs Android's "All files access" (*Dev plugins* button on the start screen).
+- **.runelite folder**: *Open .runelite folder* opens RuneLite's settings/profiles folder directly
+  (file managers hide it because of the leading dot).
 - **Home screen widget and quick launch**: a *Play RuneLite* widget and a long-press *Play* app
   shortcut start the game straight away with your saved settings, or bring it back to the front if
   it is already running.
@@ -57,7 +64,7 @@ long-press the app icon and choose **Play** (open the app once first so the shor
 ## Tested devices
 | Device | GPU | Status |
 | --- | --- | --- |
-| OnePlus Nord N20 5G | Adreno 619 | Works, including GPU mode and 117 HD |
+| OnePlus Nord N20 5G | Adreno 619 | Works; GPU mode (stock GPU plugin) ~25–40 FPS |
 
 Reports from other devices are welcome; open an issue with the log from *Share log file*.
 

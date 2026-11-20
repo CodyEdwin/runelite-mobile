@@ -246,6 +246,15 @@ public final class Tools {
         return new File(getRuneLiteDir(), "sideloaded-plugins");
     }
 
+    /** Shared dev folder: jars here load in both normal and custom mode (needs "All files access" on Android 11+). */
+    public static File getSdcardPluginDir() {
+        return new File(Environment.getExternalStorageDirectory(), "RuneLite/plugins");
+    }
+
+    public static boolean hasAllFilesAccess() {
+        return SDK_INT < 30 || Environment.isExternalStorageManager();
+    }
+
     /** Bundled plugin jars (Cody's VPS plugins) inside the APK. */
     public static final String RUNELITE_BUNDLED_PLUGINS_ASSET = "runelite/sideloaded-plugins";
     /** Plugin jars built from runelite-automation, loaded only with the custom client. */
@@ -364,6 +373,25 @@ public final class Tools {
                     org.apache.commons.io.FileUtils.copyFile(jar, copy);
                 }
             }
+        }
+        // 2b. Dev jars from /sdcard/RuneLite/plugins (any mode; wins over same-named jars above).
+        File sdcardDir = getSdcardPluginDir();
+        if (hasAllFilesAccess()) {
+            //noinspection ResultOfMethodCallIgnored
+            sdcardDir.mkdirs();
+            File[] devJars = sdcardDir.listFiles((dir, name) -> name.endsWith(".jar"));
+            if (devJars != null) {
+                for (File jar : devJars) {
+                    if (!custom && off.getBoolean(runeLitePluginOffKey(jar.getName()), false)) continue;
+                    present.add(jar.getName());
+                    File copy = new File(target, jar.getName());
+                    if (!copy.isFile() || copy.length() != jar.length() || copy.lastModified() != jar.lastModified()) {
+                        org.apache.commons.io.FileUtils.copyFile(jar, copy);
+                    }
+                }
+            }
+        } else {
+            Log.i("RuneLitePlugins", "No all-files access; skipping " + sdcardDir);
         }
         // 3. Drop jars we put there earlier that are gone now (and anything known broken).
         for (String name : previous) {
