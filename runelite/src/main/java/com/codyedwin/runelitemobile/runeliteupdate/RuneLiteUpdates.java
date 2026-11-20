@@ -93,6 +93,17 @@ public final class RuneLiteUpdates {
         }
     }
 
+    /** Custom client toggle: the bundled runelite-automation build, no update check. */
+    public static RuneLiteBootstrap.LaunchPlan prepareCustomLaunch(Activity activity) {
+        String bundled = bundledVersion(activity);
+        UpdaterStatus.begin();
+        UpdaterStatus.log("custom client " + bundled + " (runelite-automation), no update check");
+        Log.i(TAG, "Launching custom RuneLite " + bundled);
+        RuneLiteBootstrap.LaunchPlan plan = new RuneLiteBootstrap.LaunchPlan();
+        plan.version = bundled;
+        return plan;
+    }
+
     /** Where the shim confirms that {@code version} started (see LaunchConfirm in the shim). */
     public static File okFile(Context context, String version) throws IOException {
         return new File(bootstrap(context).getOkDir(), RuneLiteBootstrap.safeName(version));

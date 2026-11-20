@@ -30,6 +30,11 @@ public class LauncherPreferences {
     public static final String PREF_KEY_RUNELITE_GPU = "runeliteGpuMode";
     /** Load the bundled + user sideloaded RuneLite plugins (default on). */
     public static final String PREF_KEY_RUNELITE_SIDELOADED = "runeliteLoadSideloadedPlugins";
+    /**
+     * Launch the custom client bundled in the APK (built from runelite-automation) with only its
+     * plugins (rsbuddy, xplogger, ...); no update check, regular sideloaded plugins skipped.
+     */
+    public static final String PREF_KEY_RUNELITE_CUSTOM = "runeliteUseCustomClient";
     /** Last RuneLite profile picked on the launcher screen. */
     public static final String PREF_KEY_RUNELITE_PROFILE = "runeliteProfile";
 

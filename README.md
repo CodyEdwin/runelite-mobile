@@ -33,6 +33,10 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
   shortcut start the game straight away with your saved settings, or bring it back to the front if
   it is already running.
 - **Sound**: game audio through Android.
+- **Custom RuneLite**: *Use custom RuneLite (my plugins only)* launches the client built from
+  [runelite-automation](https://github.com/CodyEdwin/runelite-automation) with only its plugins
+  (rsbuddy incl. Android input, xplogger, fullscreen, currenthit, mouseeffects); no update check,
+  regular sideloaded plugins are skipped. Refresh with `scripts/update_custom_runelite.sh`.
 - **Updater**: *RuneLite version & updates* keeps the client current from RuneLite's official
   bootstrap, with the bundled version as a fallback.
 - **Performance mode**: renders at a lower resolution through RuneLite's Stretched Mode for higher FPS.

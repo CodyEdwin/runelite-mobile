@@ -463,7 +463,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 try {
                     Tools.syncRuneLiteSideloadedPlugins(this,
                             androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
-                                    com.codyedwin.runelitemobile.prefs.LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
+                                    com.codyedwin.runelitemobile.prefs.LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true),
+                            Tools.useCustomRuneLite(this));
                 } catch (Exception e) {
                     Log.w("JavaGUILauncher", "Unable to sync sideloaded plugins", e);
                 }

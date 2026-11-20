@@ -248,6 +248,13 @@ public final class Tools {
 
     /** Bundled plugin jars (Cody's VPS plugins) inside the APK. */
     public static final String RUNELITE_BUNDLED_PLUGINS_ASSET = "runelite/sideloaded-plugins";
+    /** Plugin jars built from runelite-automation, loaded only with the custom client. */
+    public static final String RUNELITE_CUSTOM_PLUGINS_ASSET = "runelite/custom-plugins";
+
+    public static boolean useCustomRuneLite(Context context) {
+        return androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(com.codyedwin.runelitemobile.prefs.LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false);
+    }
     /** Plugins that cannot work on Android (no OpenGL), never copied into RuneLite's folder. */
     public static boolean isKnownBrokenRuneLitePlugin(String name) {
         return name.toLowerCase(java.util.Locale.ROOT).startsWith("117hd");
@@ -275,14 +282,18 @@ public final class Tools {
         return out;
     }
 
-    public static void syncRuneLiteSideloadedPlugins(Context context, boolean enabled) throws IOException {
+    /**
+     * @param custom custom client: only the runelite-automation plugin jars, nothing else (the
+     *               regular bundled and user jars and their on/off switches are ignored)
+     */
+    public static void syncRuneLiteSideloadedPlugins(Context context, boolean enabled, boolean custom) throws IOException {
         File visible = getRuneLiteSideloadDir();
         File target = new File(getRuneLiteDir(), ".runelite/sideloaded-plugins");
         FileUtils.ensureDirectory(visible);
         FileUtils.ensureDirectory(target);
         File manifest = new File(target, ".mirrored");
         File bundledMarker = new File(target, ".bundled-version");
-        if (!enabled) {
+        if (!enabled && !custom) {
             File[] old = target.listFiles((dir, name) -> name.endsWith(".jar"));
             if (old != null) for (File f : old) f.delete();
             manifest.delete();
@@ -300,7 +311,8 @@ public final class Tools {
         java.util.Set<String> present = new java.util.LinkedHashSet<>();
 
         // 1. Bundled jars: re-extract only when the APK changed (or a jar is missing).
-        String[] bundled = context.getAssets().list(RUNELITE_BUNDLED_PLUGINS_ASSET);
+        String assetDir = custom ? RUNELITE_CUSTOM_PLUGINS_ASSET : RUNELITE_BUNDLED_PLUGINS_ASSET;
+        String[] bundled = context.getAssets().list(assetDir);
         String apkVersion;
         try {
             android.content.pm.PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
@@ -308,6 +320,7 @@ public final class Tools {
         } catch (Exception e) {
             apkVersion = "unknown";
         }
+        apkVersion = assetDir + ":" + apkVersion;
         String installedVersion = null;
         if (bundledMarker.isFile()) {
             try (InputStream input = new FileInputStream(bundledMarker)) {
@@ -318,11 +331,11 @@ public final class Tools {
         if (bundled != null) {
             for (String name : bundled) {
                 if (!name.endsWith(".jar") || isKnownBrokenRuneLitePlugin(name)) continue;
-                if (off.getBoolean(runeLitePluginOffKey(name), false)) continue; // switched off by the user
+                if (!custom && off.getBoolean(runeLitePluginOffKey(name), false)) continue; // switched off by the user
                 present.add(name);
                 File copy = new File(target, name);
                 if (refreshBundled || !copy.isFile()) {
-                    try (InputStream in = context.getAssets().open(RUNELITE_BUNDLED_PLUGINS_ASSET + "/" + name);
+                    try (InputStream in = context.getAssets().open(assetDir + "/" + name);
                          FileOutputStream out = new FileOutputStream(copy)) {
                         IOUtils.copy(in, out);
                     }
@@ -334,7 +347,7 @@ public final class Tools {
         }
 
         // 2. User jars from the visible folder (a same-named user jar wins over the bundled one).
-        File[] jars = visible.listFiles((dir, name) -> name.endsWith(".jar"));
+        File[] jars = custom ? null : visible.listFiles((dir, name) -> name.endsWith(".jar"));
         if (jars != null) {
             for (File jar : jars) {
                 if (isKnownBrokenRuneLitePlugin(jar.getName())) {
@@ -359,15 +372,17 @@ public final class Tools {
         File[] existing = target.listFiles((dir, name) -> name.endsWith(".jar"));
         if (existing != null) for (File f : existing) {
             // known broken, or switched off by the user (only RuneLite's mirror copy; the APK and the
-            // visible folder are untouched, so switching it back on restores it)
-            if (isKnownBrokenRuneLitePlugin(f.getName()) || off.getBoolean(runeLitePluginOffKey(f.getName()), false)) f.delete();
+            // visible folder are untouched, so switching it back on restores it); the custom client
+            // gets nothing but its own plugins
+            if (isKnownBrokenRuneLitePlugin(f.getName()) || (custom ? !present.contains(f.getName())
+                    : off.getBoolean(runeLitePluginOffKey(f.getName()), false))) f.delete();
         }
         StringBuilder mirrored = new StringBuilder();
         for (String name : present) mirrored.append(name).append('\n');
         try (FileOutputStream output = new FileOutputStream(manifest)) {
             output.write(mirrored.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
-        Log.i("RuneLitePlugins", "Sideloaded plugins: " + present.size() + " jars in " + target);
+        Log.i("RuneLitePlugins", (custom ? "Custom client plugins: " : "Sideloaded plugins: ") + present.size() + " jars in " + target);
     }
 
     /** Android entry point + overrides, see runelite_android_shim/ in the repository root. */
@@ -460,8 +475,9 @@ public final class Tools {
         ensureRuneLiteInstalled(activity);
         String runtimeName = getRuneLiteRuntimeName(activity);
         // Official RuneLite release from bootstrap.json (downloaded/verified here), or the bundled jar.
-        com.codyedwin.runelitemobile.runeliteupdate.RuneLiteBootstrap.LaunchPlan plan =
-                com.codyedwin.runelitemobile.runeliteupdate.RuneLiteUpdates.prepareLaunch(activity);
+        com.codyedwin.runelitemobile.runeliteupdate.RuneLiteBootstrap.LaunchPlan plan = useCustomRuneLite(activity)
+                ? com.codyedwin.runelitemobile.runeliteupdate.RuneLiteUpdates.prepareCustomLaunch(activity)
+                : com.codyedwin.runelitemobile.runeliteupdate.RuneLiteUpdates.prepareLaunch(activity);
 
         Intent intent = new Intent(activity, JavaGUILauncherActivity.class);
         intent.putExtra(JavaGUILauncherActivity.EXTRA_RUNELITE, true);

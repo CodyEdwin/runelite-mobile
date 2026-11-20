@@ -185,6 +185,8 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false));
         right.addView(toggle("GPU mode (experimental)",
                 LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
+        right.addView(toggle("Use custom RuneLite (my plugins only)",
+                LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
         right.addView(toggle("Load sideloaded plugins",
                 LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
         right.addView(action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
