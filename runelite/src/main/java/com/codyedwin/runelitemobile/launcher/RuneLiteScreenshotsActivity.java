@@ -26,6 +26,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.codyedwin.runelitemobile.ScreenshotBackup;
 import com.codyedwin.runelitemobile.Tools;
 
 import java.io.File;
@@ -131,10 +132,15 @@ public class RuneLiteScreenshotsActivity extends AppCompatActivity {
         mEmpty.setTextColor(0xFFAAAAAA);
         mEmpty.setGravity(Gravity.CENTER);
         mEmpty.setPadding(dp(24), dp(24), dp(24), dp(24));
-        mEmpty.setText("No screenshots yet.\nRuneLite's Screenshot plugin saves them to\n" + screenshotDir());
+        mEmpty.setText("No screenshots yet.\nRuneLite's Screenshot plugin saves them to\n" + screenshotDir()
+                + "\n\nWith All files access on, the app also copies them to " + ScreenshotBackup.backupDir());
         root.addView(mEmpty, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         reload();
+        mDecoder.execute(() -> {
+            ScreenshotBackup.syncNow();
+            mMain.post(this::reload);
+        });
     }
 
     @Override
@@ -146,6 +152,11 @@ public class RuneLiteScreenshotsActivity extends AppCompatActivity {
     private void reload() {
         mFiles.clear();
         collect(screenshotDir(), mFiles);
+        java.util.Set<String> have = new java.util.HashSet<>();
+        for (File f : mFiles) have.add(relative(f));
+        List<File> backups = new ArrayList<>();
+        collect(ScreenshotBackup.backupDir(), backups);
+        for (File f : backups) if (have.add(relative(f))) mFiles.add(f);
         mFiles.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
         mEmpty.setVisibility(mFiles.isEmpty() ? View.VISIBLE : View.GONE);
         setTitle("Screenshots (" + mFiles.size() + ")");
@@ -166,10 +177,19 @@ public class RuneLiteScreenshotsActivity extends AppCompatActivity {
 
     /** "Character / Category" from ~/.runelite/screenshots/<character>/<category>/file.png */
     private static String caption(File f) {
-        String root = screenshotDir().getAbsolutePath();
-        String parent = f.getParentFile() == null ? "" : f.getParentFile().getAbsolutePath();
-        String rel = parent.startsWith(root) ? parent.substring(root.length()).replaceFirst("^/", "") : "";
-        return rel.isEmpty() ? f.getName() : rel.replace("/", " / ");
+        String rel = relative(f);
+        int slash = rel.lastIndexOf('/');
+        return slash < 0 ? f.getName() : rel.substring(0, slash).replace("/", " / ");
+    }
+
+    /** Path below the screenshots root (app folder or the /sdcard backup). */
+    private static String relative(File f) {
+        String path = f.getAbsolutePath();
+        for (File root : new File[]{screenshotDir(), ScreenshotBackup.backupDir()}) {
+            String r = root.getAbsolutePath() + "/";
+            if (path.startsWith(r)) return path.substring(r.length());
+        }
+        return f.getName();
     }
 
     private static Bitmap decode(File f, int target) {
@@ -203,7 +223,11 @@ public class RuneLiteScreenshotsActivity extends AppCompatActivity {
         buttons.addView(button("Delete", v -> new AlertDialog.Builder(this)
                 .setMessage("Delete " + f.getName() + "?")
                 .setPositiveButton("Delete", (d, w) -> {
-                    if (f.delete()) {
+                    File backup = new File(ScreenshotBackup.backupDir(), relative(f));
+                    File app = new File(screenshotDir(), relative(f));
+                    backup.delete();
+                    app.delete();
+                    if (!f.exists()) {
                         mThumbs.remove(f.getPath());
                         dialog.dismiss();
                         reload();

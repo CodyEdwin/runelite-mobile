@@ -172,7 +172,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         findViewById(R.id.installmod_window_movedown).setOnTouchListener(this);
         findViewById(R.id.installmod_window_moveleft).setOnTouchListener(this);
         findViewById(R.id.installmod_window_moveright).setOnTouchListener(this);
-        if (mRuneLite) setupRuneLiteOverlays();
+        if (mRuneLite) {
+            setupRuneLiteOverlays();
+            ScreenshotBackup.start();
+        }
 
         mMousePointerImageView.post(() -> {
             ViewGroup.LayoutParams params = mMousePointerImageView.getLayoutParams();
@@ -780,6 +783,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     @Override
     protected void onDestroy() {
         mStatsHandler.removeCallbacksAndMessages(null);
+        ScreenshotBackup.stop();
         mMouseButtonState = 0;
         super.onDestroy();
     }
