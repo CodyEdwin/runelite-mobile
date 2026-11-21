@@ -400,6 +400,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 String gpuClasspath = "";
                 // Native helpers loaded by the shim (AAudio sound output, GPU mode).
                 args.add("-Drunelite.android.nativeDir=" + getApplicationInfo().nativeLibraryDir);
+                if (Tools.useCustomRuneLite(this)) args.add("-Drunelite.android.custom=true");
                 // GPU mode (experimental): RuneLite's GPU plugin on MobileGlues (desktop GL over GLES)
                 // through an offscreen EGL context (see net.runelite.rlawt.AWTContext in the shim).
                 if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(

@@ -251,6 +251,14 @@ public final class Tools {
         return new File(Environment.getExternalStorageDirectory(), "RuneLite/plugins");
     }
 
+    /** Updated custom-client plugin jars ("Update custom plugins"); custom mode only, override the bundled ones. */
+    public static File getSdcardCustomPluginDir() {
+        return new File(Environment.getExternalStorageDirectory(), "RuneLite/custom-plugins");
+    }
+
+    /** Release the "Update custom plugins" button downloads jars from (scripts/publish_custom_plugins.sh). */
+    public static final String CUSTOM_PLUGINS_URL = "https://github.com/CodyEdwin/runelite-mobile/releases/download/custom-plugins/";
+
     public static boolean hasAllFilesAccess() {
         return SDK_INT < 30 || Environment.isExternalStorageManager();
     }
@@ -336,7 +344,8 @@ public final class Tools {
                 installedVersion = read(input).trim();
             }
         }
-        boolean refreshBundled = !apkVersion.equals(installedVersion);
+        // Custom mode always re-extracts (5 small jars) so a removed override falls back to the bundled jar.
+        boolean refreshBundled = custom || !apkVersion.equals(installedVersion);
         if (bundled != null) {
             for (String name : bundled) {
                 if (!name.endsWith(".jar") || isKnownBrokenRuneLitePlugin(name)) continue;
@@ -374,12 +383,21 @@ public final class Tools {
                 }
             }
         }
-        // 2b. Dev jars from /sdcard/RuneLite/plugins (any mode; wins over same-named jars above).
+        // 2b. Dev jars from /sdcard/RuneLite/plugins (any mode) and, in custom mode, updated custom
+        // plugins from /sdcard/RuneLite/custom-plugins; both win over same-named jars above.
         File sdcardDir = getSdcardPluginDir();
         if (hasAllFilesAccess()) {
             //noinspection ResultOfMethodCallIgnored
             sdcardDir.mkdirs();
             File[] devJars = sdcardDir.listFiles((dir, name) -> name.endsWith(".jar"));
+            if (custom) {
+                File[] updated = getSdcardCustomPluginDir().listFiles((dir, name) -> name.endsWith(".jar"));
+                if (updated != null) {
+                    java.util.List<File> all = new java.util.ArrayList<>(java.util.Arrays.asList(updated));
+                    if (devJars != null) all.addAll(java.util.Arrays.asList(devJars));
+                    devJars = all.toArray(new File[0]);
+                }
+            }
             if (devJars != null) {
                 for (File jar : devJars) {
                     if (!custom && off.getBoolean(runeLitePluginOffKey(jar.getName()), false)) continue;

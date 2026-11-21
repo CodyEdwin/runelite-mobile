@@ -45,6 +45,11 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
   [runelite-automation](https://github.com/CodyEdwin/runelite-automation) with only its plugins
   (rsbuddy incl. Android input, xplogger, fullscreen, currenthit, mouseeffects); no update check,
   regular sideloaded plugins are skipped. Refresh with `scripts/update_custom_runelite.sh`.
+- **Update custom plugins without a new APK**: the launcher's **Update custom plugins** button downloads
+  the newest jars from the [`custom-plugins`](https://github.com/CodyEdwin/runelite-mobile/releases/tag/custom-plugins)
+  release into `/sdcard/RuneLite/custom-plugins`. In custom mode they replace the bundled jars of the same
+  name and hot-reload within ~2 s while the game runs. Publish with `scripts/update_custom_runelite.sh`
+  followed by `scripts/publish_custom_plugins.sh`.
 - **Updater**: *RuneLite version & updates* keeps the client current from RuneLite's official
   bootstrap, with the bundled version as a fallback.
 - **Render resolution**: a 25–100% slider (replaces Performance mode). Below 100% the game renders
