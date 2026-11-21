@@ -71,7 +71,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
     }
 
     /** Transform from the AWT virtual screen to view coordinates (uniform scale + centring). */
-    private volatile float mScale = 1f;
+    private volatile float mScaleX = 1f, mScaleY = 1f;
     private volatile float mOffsetX = 0f;
     private volatile float mOffsetY = 0f;
 
@@ -81,8 +81,8 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
      * clamped to the nearest edge.
      */
     public void viewToCanvas(float viewX, float viewY, PointF out) {
-        float x = (viewX - mOffsetX) / mScale;
-        float y = (viewY - mOffsetY) / mScale;
+        float x = (viewX - mOffsetX) / mScaleX;
+        float y = (viewY - mOffsetY) / mScaleY;
         out.x = Math.max(0, Math.min(getCanvasWidth() - 1, x));
         out.y = Math.max(0, Math.min(getCanvasHeight() - 1, y));
     }
@@ -106,10 +106,15 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
         if (viewWidth <= 0 || viewHeight <= 0) return;
         int bufferWidth = getCanvasWidth();
         int bufferHeight = getCanvasHeight();
-        float scale = Math.min((float) viewWidth / bufferWidth, (float) viewHeight / bufferHeight);
-        float contentWidth = bufferWidth * scale;
-        float contentHeight = bufferHeight * scale;
-        mScale = scale;
+        float sx = (float) viewWidth / bufferWidth, sy = (float) viewHeight / bufferHeight;
+        float scale = Math.min(sx, sy);
+        // Within a few percent of the view's shape (e.g. insets changed after the virtual screen
+        // size was fixed at launch): stretch to fill instead of leaving thin black bars.
+        boolean fill = Math.max(sx, sy) / scale <= 1.06f;
+        float contentWidth = fill ? viewWidth : bufferWidth * scale;
+        float contentHeight = fill ? viewHeight : bufferHeight * scale;
+        mScaleX = fill ? sx : scale;
+        mScaleY = fill ? sy : scale;
         mOffsetX = (viewWidth - contentWidth) / 2f;
         mOffsetY = (viewHeight - contentHeight) / 2f;
 

@@ -96,9 +96,10 @@ final class WindowFitter {
                 ((JFrame) window).getContentPane().invalidate();
                 ((JFrame) window).getRootPane().revalidate();
             }
-            if (!window.getBounds().equals(screen)) {
-                if (DEBUG) System.out.println("WindowFitter: main frame " + window.getBounds() + " -> " + screen);
-                setBounds(window, screen);
+            Rectangle target = mainFrameBounds(window, screen);
+            if (!window.getBounds().equals(target)) {
+                if (DEBUG) System.out.println("WindowFitter: main frame " + window.getBounds() + " -> " + target);
+                setBounds(window, target);
                 RepaintPump.repaintAll();
             }
         } else if (window instanceof Dialog || window instanceof Frame) {
@@ -136,7 +137,7 @@ final class WindowFitter {
             if (!w.isShowing() || !isMainFrame(w)) continue;
             if (screen == null) screen = screenBounds();
             boolean lostMaximized = (((Frame) w).getExtendedState() & Frame.MAXIMIZED_BOTH) != Frame.MAXIMIZED_BOTH;
-            if (lostMaximized || !w.getBounds().equals(screen)) {
+            if (lostMaximized || !w.getBounds().equals(mainFrameBounds(w, screen))) {
                 if (DEBUG && sEnforced++ < 50) System.out.println("WindowFitter: enforce #" + sEnforced + " " + w.getBounds() + " state=" + ((Frame) w).getExtendedState());
                 fit(w, false);
             }
@@ -167,6 +168,23 @@ final class WindowFitter {
         if (depth < 6 && c instanceof java.awt.Container) {
             for (java.awt.Component child : ((java.awt.Container) c).getComponents()) dump(sb, child, depth + 1);
         }
+    }
+
+    private static java.awt.Insets sLoggedInsets;
+
+    /**
+     * Screen bounds grown by the frame's insets: cacio reserves insets for a native title bar it
+     * never draws (an empty black strip at the top), so push that area off-screen.
+     */
+    private static Rectangle mainFrameBounds(Window window, Rectangle screen) {
+        java.awt.Insets in = window.getInsets();
+        if (in == null) return screen;
+        if (!in.equals(sLoggedInsets)) {
+            sLoggedInsets = in;
+            System.out.println("WindowFitter: main frame insets " + in);
+        }
+        return new Rectangle(screen.x - in.left, screen.y - in.top,
+                screen.width + in.left + in.right, screen.height + in.top + in.bottom);
     }
 
     private static void setBounds(Window window, Rectangle bounds) {
