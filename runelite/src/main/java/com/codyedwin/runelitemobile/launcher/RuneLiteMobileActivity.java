@@ -46,7 +46,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
     private static final int REQUEST_IMPORT_PROFILE = 4102;
     private static final int REQUEST_EXPORT_PROFILE = 4103;
     private RuneLiteProfiles.Profile exporting;
-    private static final int ORANGE = 0xFFDC8A00;
+    private static final int ORANGE = 0xFFF5A623;
     private static final int PANEL = 0xFF2B2B2B;
 
     private SharedPreferences prefs;
@@ -85,6 +85,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         loadProfiles();
+        updateModeSummary();
         launching = false;
         play.setEnabled(true);
         if (quickPlay) {
@@ -115,38 +116,113 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
     }
 
-    private View buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setBackgroundColor(0xFF1B1B1B);
-        root.setPadding(dp(24), dp(16), dp(24), dp(16));
+    private static final int BG_TOP = 0xFF1A0F2E;
+    private static final int BG_BOTTOM = 0xFF09070F;
+    private static final int CARD = 0xF01C1430;
+    private static final int CARD_STROKE = 0xFF3B2A5C;
+    private static final int PURPLE = 0xFF9B6BFF;
+    private static final int TEXT_DIM = 0xFFB4A9C9;
 
-        // Left: brand + profile + PLAY
-        LinearLayout left = new LinearLayout(this);
-        left.setOrientation(LinearLayout.VERTICAL);
-        left.setGravity(Gravity.CENTER_HORIZONTAL);
+    private android.widget.FrameLayout container;
+    private View homePage, settingsPage;
+    private TextView modeSummary;
+
+    private View buildUi() {
+        container = new android.widget.FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{BG_TOP, BG_BOTTOM});
+        container.setBackground(bg);
+        homePage = buildHome();
+        settingsPage = buildSettings();
+        settingsPage.setVisibility(View.GONE);
+        container.addView(homePage);
+        container.addView(settingsPage);
+        return container;
+    }
+
+    private void showSettings(boolean show) {
+        settingsPage.setVisibility(show ? View.VISIBLE : View.GONE);
+        homePage.setVisibility(show ? View.GONE : View.VISIBLE);
+        if (!show) updateModeSummary();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) showSettings(false);
+        else super.onBackPressed();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putBoolean("settingsOpen", settingsPage != null && settingsPage.getVisibility() == View.VISIBLE);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle in) {
+        super.onRestoreInstanceState(in);
+        if (in.getBoolean("settingsOpen")) showSettings(true);
+    }
+
+    private boolean landscape() {
+        return getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    private View buildHome() {
+        boolean wide = landscape();
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setPadding(dp(28), dp(20), dp(28), dp(20));
+
+        // Brand
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.VERTICAL);
+        brand.setGravity(Gravity.CENTER);
         android.widget.ImageView logo = new android.widget.ImageView(this);
         logo.setImageResource(R.drawable.runelite_mobile_logo);
-        left.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
+        brand.addView(logo, new LinearLayout.LayoutParams(dp(wide ? 150 : 128), dp(wide ? 150 : 128)));
         TextView title = new TextView(this);
-        title.setText(R.string.app_name);
+        title.setText(getString(R.string.app_name).toUpperCase(java.util.Locale.ROOT));
         title.setTextColor(ORANGE);
-        title.setTextSize(26);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextSize(24);
+        title.setLetterSpacing(0.12f);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         title.setGravity(Gravity.CENTER);
-        left.addView(title);
+        title.setShadowLayer(dp(8), 0, 0, 0x889B6BFF);
+        brand.addView(title);
         TextView version = new TextView(this);
-        version.setText("RuneLite " + RuneLiteUpdates.bundledVersion(this) + " (bundled)");
-        version.setTextColor(0xFFAAAAAA);
+        version.setText("RuneLite " + RuneLiteUpdates.bundledVersion(this) + "  ·  v" + appVersion());
+        version.setTextColor(TEXT_DIM);
+        version.setTextSize(12);
         version.setGravity(Gravity.CENTER);
-        left.addView(version);
+        version.setPadding(0, dp(2), 0, 0);
+        brand.addView(version);
+        modeSummary = new TextView(this);
+        modeSummary.setTextColor(PURPLE);
+        modeSummary.setTextSize(12);
+        modeSummary.setGravity(Gravity.CENTER);
+        modeSummary.setPadding(dp(12), dp(4), dp(12), dp(4));
+        GradientDrawable chip = new GradientDrawable();
+        chip.setColor(0x332A1A4A);
+        chip.setStroke(dp(1), CARD_STROKE);
+        chip.setCornerRadius(dp(14));
+        modeSummary.setBackground(chip);
+        LinearLayout.LayoutParams chipLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipLp.topMargin = dp(10);
+        brand.addView(modeSummary, chipLp);
+        updateModeSummary();
 
-        TextView profileLabel = label("RuneLite profile");
-        profileLabel.setPadding(0, dp(20), 0, dp(4));
-        left.addView(profileLabel);
+        // Controls card
+        LinearLayout controls = card();
+        TextView profileLabel = sectionLabel("PROFILE");
+        controls.addView(profileLabel);
         profileSpinner = new Spinner(this);
-        profileSpinner.setBackground(panel(PANEL));
-        left.addView(profileSpinner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        GradientDrawable spinnerBg = new GradientDrawable();
+        spinnerBg.setColor(0xFF140E22);
+        spinnerBg.setStroke(dp(1), CARD_STROKE);
+        spinnerBg.setCornerRadius(dp(10));
+        profileSpinner.setBackground(spinnerBg);
+        controls.addView(profileSpinner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
         profileSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -160,88 +236,238 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
-
         LinearLayout profileActions = new LinearLayout(this);
-        profileActions.setOrientation(LinearLayout.HORIZONTAL);
-        View importProfile = action("Import profile", v -> importProfile());
-        View exportProfile = action("Export profile", v -> exportProfile());
-        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        half.topMargin = dp(8);
-        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        half2.topMargin = dp(8);
-        half2.leftMargin = dp(8);
-        profileActions.addView(importProfile, half);
-        profileActions.addView(exportProfile, half2);
-        left.addView(profileActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        profileActions.addView(linkButton("Import", v -> importProfile()), new LinearLayout.LayoutParams(0, dp(40), 1f));
+        profileActions.addView(linkButton("Export", v -> exportProfile()), new LinearLayout.LayoutParams(0, dp(40), 1f));
+        controls.addView(profileActions);
 
         play = new Button(this);
         play.setText("PLAY");
         play.setTextColor(Color.WHITE);
         play.setTextSize(22);
+        play.setLetterSpacing(0.2f);
         play.setTypeface(Typeface.DEFAULT_BOLD);
-        play.setBackground(panel(ORANGE));
+        GradientDrawable playBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xFFF5A623, 0xFFD97706});
+        playBg.setCornerRadius(dp(14));
+        play.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x55FFFFFF), playBg, null));
+        play.setElevation(dp(6));
         LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64));
-        playLp.topMargin = dp(16);
-        left.addView(play, playLp);
+        playLp.topMargin = dp(10);
+        controls.addView(play, playLp);
         play.setOnClickListener(v -> play());
 
         status = new TextView(this);
-        status.setTextColor(0xFFAAAAAA);
+        status.setTextColor(TEXT_DIM);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(0, dp(8), 0, 0);
-        left.addView(status);
+        status.setPadding(0, dp(6), 0, 0);
+        controls.addView(status);
 
-        // Right: toggles + actions
-        ScrollView rightScroll = new ScrollView(this);
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        rightScroll.addView(right);
+        LinearLayout tiles = new LinearLayout(this);
+        tiles.setPadding(0, dp(6), 0, 0);
+        tiles.addView(tile("◫", "Screenshots", v -> startActivity(new Intent(this, RuneLiteScreenshotsActivity.class))));
+        tiles.addView(tile("⧉", "Plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
+        tiles.addView(tile("≡", "Logs", v -> showLogs()));
+        tiles.addView(tile("⚙", "Settings", v -> showSettings(true)));
+        controls.addView(tiles);
 
+        if (wide) {
+            root.addView(brand, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.15f);
+            clp.leftMargin = dp(28);
+            root.addView(controls, clp);
+            ScrollView scroll = new ScrollView(this);
+            scroll.setFillViewport(true);
+            scroll.addView(root);
+            return scroll;
+        }
+        root.addView(brand);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.topMargin = dp(24);
+        root.addView(controls, clp);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(root);
+        return scroll;
+    }
+
+    private View buildSettings() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(8), dp(8), dp(16), dp(8));
+        header.setBackgroundColor(0x661A0F2E);
+        Button back = new Button(this);
+        back.setText("←");
+        back.setTextSize(22);
+        back.setTextColor(Color.WHITE);
+        back.setBackground(ripple(null));
+        back.setOnClickListener(v -> showSettings(false));
+        header.addView(back, new LinearLayout.LayoutParams(dp(52), dp(48)));
+        TextView title = new TextView(this);
+        title.setText("Settings");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(title);
+        page.addView(header);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        int side = landscape() ? dp(96) : dp(16);
+        list.setPadding(side, dp(8), side, dp(24));
+
+        LinearLayout graphics = section(list, "GRAPHICS");
         Button scaleButton = (Button) action(renderScaleLabel(), null);
         scaleButton.setOnClickListener(v -> chooseRenderScale(scaleButton));
-        right.addView(scaleButton);
-        right.addView(toggle("GPU mode (experimental)",
-                LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
-        right.addView(toggle("Use custom RuneLite (my plugins only)",
-                LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
-        right.addView(toggle("Touch Mode (OSRS mobile controls)",
-                LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false));
-        Button lockButton = (Button) action("", null);
-        lockButton.setText("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs));
+        add(graphics, scaleButton);
+        add(graphics, toggle("GPU mode (experimental)", LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
+        add(graphics, toggle("Pad game from rounded screen corners", LauncherPreferences.PREF_KEY_RUNELITE_CORNER_PAD, false));
+
+        LinearLayout client = section(list, "CLIENT & PLUGINS");
+        add(client, toggle("Use custom RuneLite (my plugins only)", LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
+        add(client, toggle("Load sideloaded plugins", LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
+        add(client, action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
+        add(client, action("Import plugin (.jar)", v -> importPlugin()));
+        add(client, action("Dev plugins: /sdcard/RuneLite/plugins", v -> sdcardPlugins()));
+        add(client, action("Update custom plugins (download latest)", v -> updateCustomPlugins()));
+        add(client, action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
+
+        LinearLayout controls = section(list, "CONTROLS");
+        add(controls, toggle("Touch Mode (OSRS mobile controls)", LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false));
+        Button lockButton = (Button) action("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs) + "  (or 5-finger tap)", null);
         lockButton.setOnClickListener(v -> chooseTouchLockKey(lockButton));
-        right.addView(lockButton);
-        right.addView(toggle("Pad game from rounded screen corners",
-                LauncherPreferences.PREF_KEY_RUNELITE_CORNER_PAD, false));
-        right.addView(toggle("FPS / temperature overlay",
-                LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false));
-        right.addView(toggle("Battery % overlay (top center)",
-                LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, false));
-        right.addView(toggle("RSBuddy start/stop button (custom RuneLite)",
-                LauncherPreferences.PREF_KEY_RUNELITE_RSBUDDY_BUTTON, true));
-        right.addView(toggle("Load sideloaded plugins",
-                LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
-        right.addView(action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
-        right.addView(action("Import plugin (.jar)", v -> importPlugin()));
-        right.addView(action("Open game directory", v -> Tools.openPath(this, Tools.getRuneLiteDir(), false)));
-        right.addView(action("Open .runelite folder (settings, profiles)", v -> {
+        add(controls, lockButton);
+
+        LinearLayout overlays = section(list, "OVERLAYS");
+        add(overlays, toggle("FPS / temperature", LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false));
+        add(overlays, toggle("Battery %  (Ctrl+Shift+B in game)", LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, false));
+        add(overlays, toggle("RSBuddy start/stop button (custom RuneLite)", LauncherPreferences.PREF_KEY_RUNELITE_RSBUDDY_BUTTON, true));
+
+        LinearLayout files = section(list, "FILES & SYSTEM");
+        add(files, action("Open game directory", v -> Tools.openPath(this, Tools.getRuneLiteDir(), false)));
+        add(files, action("Open .runelite folder (settings, profiles)", v -> {
             File dotRuneLite = new File(Tools.getRuneLiteDir(), ".runelite");
             //noinspection ResultOfMethodCallIgnored
             dotRuneLite.mkdirs();
             Tools.openPath(this, dotRuneLite, false);
         }));
-        right.addView(action("Dev plugins: /sdcard/RuneLite/plugins", v -> sdcardPlugins()));
-        right.addView(action("Update custom plugins (download latest)", v -> updateCustomPlugins()));
-        right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
-        right.addView(action("Settings (memory)", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
-        right.addView(action("View logs", v -> showLogs()));
-        right.addView(action("Screenshots", v -> startActivity(new Intent(this, RuneLiteScreenshotsActivity.class))));
-        right.addView(action("About RuneLite Mobile", v -> showAbout()));
+        add(files, action("Memory", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
+        add(files, action("View logs", v -> showLogs()));
+        add(files, action("About RuneLite Mobile", v -> showAbout()));
 
-        LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        leftLp.rightMargin = dp(24);
-        root.addView(left, leftLp);
-        root.addView(rightScroll, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.3f));
-        return root;
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(list);
+        page.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        return page;
+    }
+
+    private void updateModeSummary() {
+        if (modeSummary == null) return;
+        StringBuilder sb = new StringBuilder(prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false) ? "Custom client" : "Standard client");
+        sb.append("  ·  ").append(prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_GPU, false) ? "GPU" : "Software");
+        if (prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false)) sb.append("  ·  Touch Mode");
+        int scale = LauncherPreferences.renderScale(prefs);
+        if (scale < 100) sb.append("  ·  ").append(scale).append('%');
+        modeSummary.setText(sb);
+    }
+
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
+    private LinearLayout card() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(16), dp(14), dp(16), dp(10));
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(CARD);
+        d.setStroke(dp(1), CARD_STROKE);
+        d.setCornerRadius(dp(18));
+        c.setBackground(d);
+        c.setElevation(dp(4));
+        return c;
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(PURPLE);
+        t.setTextSize(12);
+        t.setLetterSpacing(0.15f);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setPadding(dp(4), 0, 0, dp(6));
+        return t;
+    }
+
+    private LinearLayout section(LinearLayout list, String title) {
+        TextView label = sectionLabel(title);
+        label.setPadding(dp(8), dp(18), 0, dp(8));
+        list.addView(label);
+        LinearLayout c = card();
+        c.setPadding(0, dp(4), 0, dp(4));
+        list.addView(c);
+        return c;
+    }
+
+    private void add(LinearLayout section, View row) {
+        if (section.getChildCount() > 0) {
+            View divider = new View(this);
+            divider.setBackgroundColor(0x553B2A5C);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            dl.leftMargin = dp(16);
+            dl.rightMargin = dp(16);
+            section.addView(divider, dl);
+        }
+        section.addView(row);
+    }
+
+    private android.graphics.drawable.RippleDrawable ripple(android.graphics.drawable.Drawable content) {
+        GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE);
+        mask.setCornerRadius(dp(12));
+        return new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x339B6BFF), content, mask);
+    }
+
+    private Button linkButton(String text, View.OnClickListener l) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextColor(ORANGE);
+        b.setTextSize(14);
+        b.setBackground(ripple(null));
+        b.setOnClickListener(l);
+        return b;
+    }
+
+    private View tile(String icon, String text, View.OnClickListener l) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(0, dp(8), 0, dp(8));
+        t.setBackground(ripple(null));
+        t.setClickable(true);
+        t.setOnClickListener(l);
+        TextView i = new TextView(this);
+        i.setText(icon);
+        i.setTextSize(22);
+        i.setTextColor(PURPLE);
+        i.setGravity(Gravity.CENTER);
+        t.addView(i);
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextSize(12);
+        label.setTextColor(TEXT_DIM);
+        label.setGravity(Gravity.CENTER);
+        t.addView(label);
+        t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return t;
     }
 
     private GradientDrawable panel(int color) {
@@ -319,7 +545,9 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         s.setTextColor(Color.WHITE);
         s.setTextSize(16);
         s.setPadding(dp(16), 0, dp(16), 0);
-        s.setBackground(panel(PANEL));
+        s.setBackground(ripple(null));
+        s.setThumbTintList(new android.content.res.ColorStateList(new int[][]{{android.R.attr.state_checked}, {}}, new int[]{ORANGE, 0xFF8A80A0}));
+        s.setTrackTintList(new android.content.res.ColorStateList(new int[][]{{android.R.attr.state_checked}, {}}, new int[]{0x88F5A623, 0x553B2A5C}));
         s.setChecked(prefs.getBoolean(key, def));
         s.ready = true;
         s.setOnCheckedChangeListener((b, checked) -> {
@@ -335,9 +563,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 android.util.Log.i("RuneLiteMobile", key + " = " + checked);
             }
         });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
-        lp.bottomMargin = dp(8);
-        s.setLayoutParams(lp);
+        s.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
         return s;
     }
 
@@ -349,11 +575,9 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         b.setTextSize(16);
         b.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         b.setPadding(dp(16), 0, dp(16), 0);
-        b.setBackground(panel(PANEL));
+        b.setBackground(ripple(null));
         b.setOnClickListener(listener);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
-        lp.bottomMargin = dp(8);
-        b.setLayoutParams(lp);
+        b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
         return b;
     }
 
@@ -479,7 +703,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                         + LauncherPreferences.touchLockLabel(prefs))
                 .setNeutralButton("Turn off", (d, w) -> {
                     prefs.edit().putString(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_LOCK_KEY, "").apply();
-                    button.setText("Touch lock shortcut: Off");
+                    button.setText("Touch lock shortcut: Off  (5-finger tap still works)");
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
@@ -488,7 +712,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                     || android.view.KeyEvent.isModifierKey(keyCode)) return false;
             int mods = event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS;
             prefs.edit().putString(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_LOCK_KEY, mods + ":" + keyCode).apply();
-            button.setText("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs));
+            button.setText("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs) + "  (or 5-finger tap)");
             d.dismiss();
             return true;
         });

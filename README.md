@@ -46,9 +46,10 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
   (rsbuddy incl. Android input, xplogger, fullscreen, currenthit, mouseeffects); no update check,
   regular sideloaded plugins are skipped. Refresh with `scripts/update_custom_runelite.sh`.
 - **Battery overlay**: optional battery % at the top center, green/yellow/orange/red by level, blue with ⚡ while charging. Ctrl+Shift+B shows/hides it in game.
+- **Launcher (v0.5.0)**: home screen with PLAY, profile import/export and Screenshots/Plugins/Logs/Settings tiles; all toggles and tools live in a grouped Settings screen. Works in portrait and landscape.
 - **Screenshots gallery**: launcher button that browses RuneLite's screenshots (newest first, per character/category) with full-screen view, Share, Save to Pictures/RuneLite and Delete. New screenshots are also copied to /sdcard/RuneLite/screenshots (needs All files access) and the gallery shows those copies too.
 - **Touch lock shortcut**: a hardware-keyboard combo (default Ctrl+Shift+L, set in the launcher) blocks
-  finger touches in game while mouse and keyboard keep working; press it again to unlock.
+  finger touches in game while mouse and keyboard keep working; press it again to unlock. A 5-finger touch also toggles it.
 - **Update custom plugins without a new APK**: the launcher's **Update custom plugins** button downloads
   the newest jars from the [`custom-plugins`](https://github.com/CodyEdwin/runelite-mobile/releases/tag/custom-plugins)
   release into `/sdcard/RuneLite/custom-plugins`. In custom mode they replace the bundled jars of the same

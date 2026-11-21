@@ -67,7 +67,7 @@
             android:name=".launcher.RuneLiteMobileActivity"
             android:label="@string/app_short_name"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="fullUser"
             android:theme="@style/Theme.AppCompat.NoActionBar"/>
         <activity
             android:name=".launcher.PlayRuneLiteActivity"

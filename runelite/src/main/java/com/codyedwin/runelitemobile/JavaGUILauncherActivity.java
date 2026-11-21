@@ -662,7 +662,29 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             sendHardwareMouseEvent(event);
             return true;
         }
-        if (mTouchLocked) return true; // finger/stylus touches blocked by the touch lock shortcut
+        if (mRuneLite) {
+            // Five fingers toggle the touch lock; the rest of that gesture is swallowed.
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 5 && !mSwallowTouchGesture) {
+                mSwallowTouchGesture = true;
+                if (!mTouchLocked) {
+                    MotionEvent cancel = MotionEvent.obtain(event);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancel);
+                    cancel.recycle();
+                }
+                setTouchLocked(!mTouchLocked);
+                android.view.inputmethod.InputMethodManager imm =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.hideSoftInputFromWindow(getWindow().getDecorView().getWindowToken(), 0);
+                return true;
+            }
+            if (mSwallowTouchGesture) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) mSwallowTouchGesture = false;
+                return true;
+            }
+        }
+        if (mTouchLocked) return true; // finger/stylus touches blocked by the touch lock
         return super.dispatchTouchEvent(event);
     }
 
@@ -1115,6 +1137,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     private int[] mTouchLockKey;
     private android.widget.TextView mBatteryView;
     private volatile boolean mTouchLocked;
+    private boolean mSwallowTouchGesture;
     private android.widget.TextView mTouchLockBadge;
 
     private void setTouchLocked(boolean locked) {
@@ -1168,9 +1191,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             });
         }
         mTouchLockKey = LauncherPreferences.touchLockKey(prefs);
-        if (mTouchLockKey != null) {
+        {
             mTouchLockBadge = new android.widget.TextView(this);
-            mTouchLockBadge.setText("Touch locked (" + LauncherPreferences.touchLockLabel(prefs) + ")");
+            mTouchLockBadge.setText("Touch locked (" + (mTouchLockKey != null
+                    ? LauncherPreferences.touchLockLabel(prefs) + " or " : "") + "5 fingers to unlock)");
             mTouchLockBadge.setTextColor(0xFFFF5555);
             mTouchLockBadge.setTextSize(11);
             mTouchLockBadge.setShadowLayer(2, 1, 1, 0xFF000000);
