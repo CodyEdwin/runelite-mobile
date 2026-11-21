@@ -990,6 +990,12 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         android.content.SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
         float density = getResources().getDisplayMetrics().density;
         ViewGroup content = findViewById(android.R.id.content);
+        // Any gap between the fitted game view and the screen edge showed the window background
+        // (a 1px strip of the launcher image down the left side).
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xFF000000));
+        content.setBackgroundColor(0xFF000000);
+        // Keep overlays clear of rounded corners and cutouts.
+        final int edge = (int) (28 * density);
         if (prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false)) {
             android.widget.TextView stats = new android.widget.TextView(this);
             stats.setTextColor(0xFFFFFF00);
@@ -1001,8 +1007,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             stats.setPadding(pad, pad / 2, pad, pad / 2);
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.gravity = Gravity.TOP | Gravity.START;
-            lp.topMargin = lp.leftMargin = (int) (4 * density);
+            lp.topMargin = (int) (10 * density);
+            lp.leftMargin = edge;
             content.addView(stats, lp);
+            applyCutoutInset(stats, lp);
             final File[] cpuZones = findCpuThermalZones();
             mStatsHandler.post(new Runnable() {
                 int lastFrames = AWTCanvasView.sFramesPosted;
@@ -1037,9 +1045,25 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             });
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
-            lp.leftMargin = (int) (4 * density);
+            lp.leftMargin = edge;
             content.addView(rsb, lp);
+            applyCutoutInset(rsb, lp);
         }
+    }
+
+    private void applyCutoutInset(View v, FrameLayout.LayoutParams lp) {
+        if (android.os.Build.VERSION.SDK_INT < 28) return;
+        final int baseLeft = lp.leftMargin, baseTop = lp.topMargin;
+        v.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.view.DisplayCutout c = insets.getDisplayCutout();
+            if (c != null) {
+                lp.leftMargin = baseLeft + c.getSafeInsetLeft();
+                lp.topMargin = baseTop + (lp.gravity == (Gravity.TOP | Gravity.START) ? c.getSafeInsetTop() : 0);
+                view.setLayoutParams(lp);
+            }
+            return insets;
+        });
+        v.requestApplyInsets();
     }
 
     private static File[] findCpuThermalZones() {
