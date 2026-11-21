@@ -36,6 +36,37 @@ public class LauncherPreferences {
     public static final String PREF_KEY_RUNELITE_TOUCH_MODE = "runeliteTouchMode";
     /** Move the game in from the left/right by the screen's corner radius (rounded corners). */
     public static final String PREF_KEY_RUNELITE_CORNER_PAD = "runeliteCornerPadding";
+    /** Battery % readout at the top center of the game, colored by level. */
+    public static final String PREF_KEY_RUNELITE_BATTERY_OVERLAY = "runeliteBatteryOverlay";
+    /** Keyboard shortcut that blocks finger touches (mouse/keyboard still work): "mods:keyCode", "" = off. */
+    public static final String PREF_KEY_RUNELITE_TOUCH_LOCK_KEY = "runeliteTouchLockKey";
+    public static final int TOUCH_LOCK_MODS = android.view.KeyEvent.META_CTRL_ON | android.view.KeyEvent.META_SHIFT_ON
+            | android.view.KeyEvent.META_ALT_ON | android.view.KeyEvent.META_META_ON;
+    private static final String TOUCH_LOCK_DEFAULT = (android.view.KeyEvent.META_CTRL_ON | android.view.KeyEvent.META_SHIFT_ON)
+            + ":" + android.view.KeyEvent.KEYCODE_L;
+
+    /** @return {mods, keyCode}, or null when the shortcut is off */
+    public static int[] touchLockKey(SharedPreferences prefs) {
+        String v = prefs.getString(PREF_KEY_RUNELITE_TOUCH_LOCK_KEY, TOUCH_LOCK_DEFAULT);
+        try {
+            String[] p = v.split(":");
+            return new int[]{Integer.parseInt(p[0]), Integer.parseInt(p[1])};
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String touchLockLabel(SharedPreferences prefs) {
+        int[] k = touchLockKey(prefs);
+        if (k == null) return "Off";
+        StringBuilder sb = new StringBuilder();
+        if ((k[0] & android.view.KeyEvent.META_CTRL_ON) != 0) sb.append("Ctrl+");
+        if ((k[0] & android.view.KeyEvent.META_ALT_ON) != 0) sb.append("Alt+");
+        if ((k[0] & android.view.KeyEvent.META_SHIFT_ON) != 0) sb.append("Shift+");
+        if ((k[0] & android.view.KeyEvent.META_META_ON) != 0) sb.append("Meta+");
+        return sb.append(android.view.KeyEvent.keyCodeToString(k[1]).replace("KEYCODE_", "")).toString();
+    }
+
     /** In-game RSBuddy start/stop button (custom RuneLite only). */
     public static final String PREF_KEY_RUNELITE_RSBUDDY_BUTTON = "runeliteRsbuddyButton";
 

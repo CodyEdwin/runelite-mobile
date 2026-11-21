@@ -206,10 +206,16 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
         right.addView(toggle("Touch Mode (OSRS mobile controls)",
                 LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false));
+        Button lockButton = (Button) action("", null);
+        lockButton.setText("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs));
+        lockButton.setOnClickListener(v -> chooseTouchLockKey(lockButton));
+        right.addView(lockButton);
         right.addView(toggle("Pad game from rounded screen corners",
                 LauncherPreferences.PREF_KEY_RUNELITE_CORNER_PAD, false));
         right.addView(toggle("FPS / temperature overlay",
                 LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false));
+        right.addView(toggle("Battery % overlay (top center)",
+                LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, false));
         right.addView(toggle("RSBuddy start/stop button (custom RuneLite)",
                 LauncherPreferences.PREF_KEY_RUNELITE_RSBUDDY_BUTTON, true));
         right.addView(toggle("Load sideloaded plugins",
@@ -461,6 +467,31 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
     private String renderScaleLabel() {
         int s = LauncherPreferences.renderScale(prefs);
         return "Render resolution: " + s + "%" + (s >= 100 ? " (full)" : " (higher FPS)");
+    }
+
+    /** Records a key combo from a hardware keyboard for the in-game touch lock. */
+    private void chooseTouchLockKey(Button button) {
+        androidx.appcompat.app.AlertDialog dialog = new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Touch lock shortcut")
+                .setMessage("Press the key combination on your keyboard (e.g. Ctrl+Shift+L).\n\nIn game it blocks finger "
+                        + "touches; mouse and keyboard keep working. Press it again to unlock.\n\nCurrent: "
+                        + LauncherPreferences.touchLockLabel(prefs))
+                .setNeutralButton("Turn off", (d, w) -> {
+                    prefs.edit().putString(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_LOCK_KEY, "").apply();
+                    button.setText("Touch lock shortcut: Off");
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN || keyCode == android.view.KeyEvent.KEYCODE_BACK
+                    || android.view.KeyEvent.isModifierKey(keyCode)) return false;
+            int mods = event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS;
+            prefs.edit().putString(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_LOCK_KEY, mods + ":" + keyCode).apply();
+            button.setText("Touch lock shortcut: " + LauncherPreferences.touchLockLabel(prefs));
+            d.dismiss();
+            return true;
+        });
+        dialog.show();
     }
 
     private void chooseRenderScale(Button button) {

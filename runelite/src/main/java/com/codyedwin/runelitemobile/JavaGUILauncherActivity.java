@@ -659,6 +659,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             sendHardwareMouseEvent(event);
             return true;
         }
+        if (mTouchLocked) return true; // finger/stylus touches blocked by the touch lock shortcut
         return super.dispatchTouchEvent(event);
     }
 
@@ -685,6 +686,12 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event);
+
+        if (mTouchLockKey != null && keyCode == mTouchLockKey[1]
+                && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS) == mTouchLockKey[0]) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) setTouchLocked(!mTouchLocked);
+            return true;
+        }
 
         int awtKeyCode = androidToAwtKeyCode(keyCode);
         if (awtKeyCode == 0 || (event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) != 0) {
@@ -1091,6 +1098,15 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     }
 
     private final Handler mStatsHandler = new Handler(Looper.getMainLooper());
+    private int[] mTouchLockKey;
+    private volatile boolean mTouchLocked;
+    private android.widget.TextView mTouchLockBadge;
+
+    private void setTouchLocked(boolean locked) {
+        mTouchLocked = locked;
+        if (mTouchLockBadge != null) mTouchLockBadge.setVisibility(locked ? View.VISIBLE : View.GONE);
+        Log.i("JavaGUILauncher", "touch lock " + (locked ? "on" : "off"));
+    }
 
     /** Optional FPS / temperature readout and RSBuddy start/stop button (launcher toggles). */
     private void setupRuneLiteOverlays() {
@@ -1103,6 +1119,53 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         content.setBackgroundColor(0xFF000000);
         // Keep overlays clear of rounded corners and cutouts.
         final int edge = (int) (28 * density);
+        boolean batteryOverlay = prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, false);
+        if (batteryOverlay) {
+            android.widget.TextView bat = new android.widget.TextView(this);
+            bat.setTextSize(12);
+            bat.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            bat.setShadowLayer(2, 1, 1, 0xFF000000);
+            bat.setBackgroundColor(0x66000000);
+            int bp = (int) (4 * density);
+            bat.setPadding(bp, bp / 4, bp, bp / 4);
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            content.addView(bat, blp);
+            mStatsHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    android.content.Intent b = registerReceiver(null, new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+                    if (b != null) {
+                        int level = b.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+                        int scale = b.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100);
+                        int pct = level < 0 ? 0 : Math.round(level * 100f / Math.max(1, scale));
+                        int status = b.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+                        boolean charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+                                || status == android.os.BatteryManager.BATTERY_STATUS_FULL;
+                        bat.setTextColor(charging ? 0xFF55DDFF : pct >= 60 ? 0xFF55FF55 : pct >= 30 ? 0xFFFFFF55
+                                : pct >= 15 ? 0xFFFFAA33 : 0xFFFF4444);
+                        bat.setText(pct + "%" + (charging ? " ⚡" : ""));
+                    }
+                    mStatsHandler.postDelayed(this, 10000);
+                }
+            });
+        }
+        mTouchLockKey = LauncherPreferences.touchLockKey(prefs);
+        if (mTouchLockKey != null) {
+            mTouchLockBadge = new android.widget.TextView(this);
+            mTouchLockBadge.setText("Touch locked (" + LauncherPreferences.touchLockLabel(prefs) + ")");
+            mTouchLockBadge.setTextColor(0xFFFF5555);
+            mTouchLockBadge.setTextSize(11);
+            mTouchLockBadge.setShadowLayer(2, 1, 1, 0xFF000000);
+            mTouchLockBadge.setBackgroundColor(0x66000000);
+            int p = (int) (3 * density);
+            mTouchLockBadge.setPadding(p, p / 2, p, p / 2);
+            mTouchLockBadge.setVisibility(View.GONE);
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            blp.topMargin = (int) ((batteryOverlay ? 26 : 10) * density);
+            content.addView(mTouchLockBadge, blp);
+        }
         if (prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false)) {
             android.widget.TextView stats = new android.widget.TextView(this);
             stats.setTextColor(0xFFFFFF00);
