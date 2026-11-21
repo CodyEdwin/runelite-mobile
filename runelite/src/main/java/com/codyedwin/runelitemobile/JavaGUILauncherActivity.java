@@ -136,6 +136,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             getWindow().setAttributes(lp);
         }
         setContentView(R.layout.activity_java_gui_launcher);
+        if (mRuneLite) keepGameInSafeArea();
 
         try {
             File latestLogFile = new File(Tools.DIR_GAME_HOME, "latestlog.txt");
@@ -1049,6 +1050,39 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             content.addView(rsb, lp);
             applyCutoutInset(rsb, lp);
         }
+    }
+
+    /**
+     * Curved ("waterfall") screens like Motorola Edge, and visible system bars, hid the top/bottom
+     * strip of the game. Pad the game layout by those insets; the camera cutout on the short edges is
+     * still drawn under (layoutInDisplayCutoutMode SHORT_EDGES). The virtual screen is sized from the
+     * laid-out view afterwards, so the game fills the remaining area exactly.
+     */
+    private void keepGameInSafeArea() {
+        View root = ((ViewGroup) findViewById(android.R.id.content)).getChildAt(0);
+        if (root == null) return;
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int l = 0, t = 0, r = 0, b = 0;
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                l = bars.left; t = bars.top; r = bars.right; b = bars.bottom;
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
+                android.view.DisplayCutout c = insets.getDisplayCutout();
+                t = Math.max(t, c.getSafeInsetTop());
+                b = Math.max(b, c.getSafeInsetBottom());
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    android.graphics.Insets w = c.getWaterfallInsets();
+                    l = Math.max(l, w.left); t = Math.max(t, w.top); r = Math.max(r, w.right); b = Math.max(b, w.bottom);
+                }
+            }
+            if (v.getPaddingLeft() != l || v.getPaddingTop() != t || v.getPaddingRight() != r || v.getPaddingBottom() != b) {
+                Log.i("JavaGUILauncher", "game safe area padding " + l + "," + t + "," + r + "," + b);
+                v.setPadding(l, t, r, b);
+            }
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private void applyCutoutInset(View v, FrameLayout.LayoutParams lp) {
