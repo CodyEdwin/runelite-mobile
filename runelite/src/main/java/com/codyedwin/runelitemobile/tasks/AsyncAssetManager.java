@@ -94,9 +94,11 @@ public class AsyncAssetManager {
         String rootDir = privateDirectory ? Tools.DIR_DATA : Tools.DIR_GAME_HOME;
 
         File versionFile = new File(rootDir + "/" + component + "/version");
+        // The runelite component dir is also RuneLite's user.home (.runelite: Jagex login, profiles), so never delete it.
+        boolean keepUserData = component.equals("runelite");
         InputStream is = am.open("components/" + component + "/version");
         if(!versionFile.exists()) {
-            if (versionFile.getParentFile().exists() && versionFile.getParentFile().isDirectory()) {
+            if (!keepUserData && versionFile.getParentFile().exists() && versionFile.getParentFile().isDirectory()) {
                 FileUtils.deleteDirectory(versionFile.getParentFile());
             }
             versionFile.getParentFile().mkdir();
@@ -111,7 +113,7 @@ public class AsyncAssetManager {
             String release1 = Tools.read(is);
             String release2 = Tools.read(fis);
             if (!release1.equals(release2)) {
-                if (versionFile.getParentFile().exists() && versionFile.getParentFile().isDirectory()) {
+                if (!keepUserData && versionFile.getParentFile().exists() && versionFile.getParentFile().isDirectory()) {
                     FileUtils.deleteDirectory(versionFile.getParentFile());
                 }
                 versionFile.getParentFile().mkdir();

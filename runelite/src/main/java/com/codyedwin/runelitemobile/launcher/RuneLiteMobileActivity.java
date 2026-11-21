@@ -234,6 +234,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
         right.addView(action("Settings (memory)", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
         right.addView(action("View logs", v -> showLogs()));
+        right.addView(action("Screenshots", v -> startActivity(new Intent(this, RuneLiteScreenshotsActivity.class))));
         right.addView(action("About RuneLite Mobile", v -> showAbout()));
 
         LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);

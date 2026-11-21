@@ -687,6 +687,16 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event);
 
+        if (keyCode == KeyEvent.KEYCODE_B && mBatteryView != null && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS)
+                == (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                boolean show = mBatteryView.getVisibility() != View.VISIBLE;
+                mBatteryView.setVisibility(show ? View.VISIBLE : View.GONE);
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+                        .putBoolean(LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, show).apply();
+            }
+            return true;
+        }
         if (mTouchLockKey != null && keyCode == mTouchLockKey[1]
                 && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS) == mTouchLockKey[0]) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) setTouchLocked(!mTouchLocked);
@@ -1099,6 +1109,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
     private final Handler mStatsHandler = new Handler(Looper.getMainLooper());
     private int[] mTouchLockKey;
+    private android.widget.TextView mBatteryView;
     private volatile boolean mTouchLocked;
     private android.widget.TextView mTouchLockBadge;
 
@@ -1120,8 +1131,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         // Keep overlays clear of rounded corners and cutouts.
         final int edge = (int) (28 * density);
         boolean batteryOverlay = prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, false);
-        if (batteryOverlay) {
+        {
             android.widget.TextView bat = new android.widget.TextView(this);
+            mBatteryView = bat;
+            bat.setVisibility(batteryOverlay ? View.VISIBLE : View.GONE);
             bat.setTextSize(12);
             bat.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             bat.setShadowLayer(2, 1, 1, 0xFF000000);
@@ -1163,7 +1176,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             mTouchLockBadge.setVisibility(View.GONE);
             FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             blp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-            blp.topMargin = (int) ((batteryOverlay ? 26 : 10) * density);
+            blp.topMargin = (int) (26 * density);
             content.addView(mTouchLockBadge, blp);
         }
         if (prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false)) {

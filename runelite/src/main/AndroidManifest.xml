@@ -105,6 +105,10 @@
             android:label="Sideloaded plugins"
             android:theme="@style/Theme.AppCompat"/>
         <activity
+            android:name=".launcher.RuneLiteScreenshotsActivity"
+            android:label="Screenshots"
+            android:theme="@style/Theme.AppCompat"/>
+        <activity
             android:name=".launcher.RuneLiteMobileSettingsActivity"
             android:label="Settings"
             android:theme="@style/Theme.AppCompat"/>
