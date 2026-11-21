@@ -265,8 +265,7 @@ static void *vkLoader(void) {
 }
 
 // Mesa 23's Zink dereferences a NULL screen (SIGSEGV in OSMesaCreateContextAttribs) when it can't
-// use the Vulkan driver, which is the case with Qualcomm's own Adreno driver. Only accept Turnip
-// (or any driver with RLAWT_ZINK_ANY_DRIVER set).
+// use the Vulkan driver, which is the case with Qualcomm's own Adreno driver.
 static int vkProbe(void *loader, char *out, size_t n) {
     snprintf(out, n, "no Vulkan loader");
     PFN_vkGetInstanceProcAddr gipa = loader ? (PFN_vkGetInstanceProcAddr) dlsym(loader, "vkGetInstanceProcAddr") : NULL;
@@ -284,7 +283,9 @@ static int vkProbe(void *loader, char *out, size_t n) {
     if (epd && gpp && epd(inst, &count, &dev) >= 0 && count > 0) {
         VkPhysicalDeviceProperties p; gpp(dev, &p);
         snprintf(out, n, "%s, Vulkan %u.%u.%u", p.deviceName, VK_VERSION_MAJOR(p.apiVersion), VK_VERSION_MINOR(p.apiVersion), VK_VERSION_PATCH(p.apiVersion));
-        ok = strstr(p.deviceName, "Turnip") != NULL || getenv("RLAWT_ZINK_ANY_DRIVER") != NULL;
+        // Qualcomm's own driver crashes Zink; Turnip, Mali and others with Vulkan 1.1+ are tried.
+        ok = strstr(p.deviceName, "Turnip") != NULL || getenv("RLAWT_ZINK_ANY_DRIVER") != NULL
+            || (strstr(p.deviceName, "Adreno") == NULL && VK_API_VERSION_MINOR(p.apiVersion) >= 1);
     }
     if (di) di(inst, NULL);
     return ok;
