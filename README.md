@@ -31,9 +31,10 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
   or shared to the app from a file manager. *Choose sideloaded plugins* opens a list where each one
   can be switched on or off individually; switched-off plugins are skipped on the next PLAY, nothing
   is deleted. A master *Load sideloaded plugins* toggle turns them all off.
-- **Dev plugins folder**: jars in `/sdcard/RuneLite/plugins` load on every PLAY, in normal and
-  custom mode, so you can build a plugin, copy the jar there and restart the game without rebuilding
-  the APK. Needs Android's "All files access" (*Dev plugins* button on the start screen).
+- **Dev plugins folder with hot-reload**: jars in `/sdcard/RuneLite/plugins` load on every PLAY, in
+  normal and custom mode. While the game runs, saving a new build of a jar there reloads its plugins
+  in about 2 seconds, with no restart and no APK rebuild. Needs Android's "All files access"
+  (*Dev plugins* button on the start screen).
 - **.runelite folder**: *Open .runelite folder* opens RuneLite's settings/profiles folder directly
   (file managers hide it because of the leading dot).
 - **Home screen widget and quick launch**: a *Play RuneLite* widget and a long-press *Play* app
@@ -46,7 +47,20 @@ Package: `com.codyedwin.runelitemobile` (debug builds add `.debug`).
   regular sideloaded plugins are skipped. Refresh with `scripts/update_custom_runelite.sh`.
 - **Updater**: *RuneLite version & updates* keeps the client current from RuneLite's official
   bootstrap, with the bundled version as a fallback.
-- **Performance mode**: renders at a lower resolution through RuneLite's Stretched Mode for higher FPS.
+- **Render resolution**: a 25–100% slider (replaces Performance mode). Below 100% the game renders
+  fewer pixels through RuneLite's Stretched Mode for higher FPS.
+- **Touch Mode (OSRS mobile controls)**: optional. Tap clicks, one-finger drag rotates the camera,
+  pinch zooms, hold opens the right-click menu, three fingers open the keyboard. Turn it off to drag
+  inventory items and scrollbars.
+- **FPS / temperature overlay**: optional readout of frames per second, battery and CPU temperature.
+- **RSBuddy start/stop button**: with the custom client, an on-screen button presses RSBuddy's
+  *Start/stop hotkey* (Pause): stops the running routine or restarts the last one.
+- **View logs**: the latest log, RuneLite's `client.log` and crash files (`hs_err_pid*.log`) in-app,
+  with Share and Copy.
+- **Screen fit**: full screen, drawn over the camera cutout; kept clear of curved edges and visible
+  system bars. *Pad game from rounded screen corners* moves the game in from rounded corners.
+- **Release and debug builds**: each release has debug APKs (`.debug` package) and `-release` APKs
+  (separate "RuneLite Mobile" app).
 - Touch, mouse and keyboard input, landscape layout, and the game resizes correctly after switching apps.
 
 ## Install
@@ -65,8 +79,9 @@ long-press the app icon and choose **Play** (open the app once first so the shor
 | Device | GPU | Status |
 | --- | --- | --- |
 | OnePlus Nord N20 5G | Adreno 619 | Works; GPU mode (stock GPU plugin) ~25–40 FPS |
+| Moto G Play 2026 | Mali-G57 MC2 | Works, including GPU mode |
 
-Reports from other devices are welcome; open an issue with the log from *Share log file*.
+Reports from other devices are welcome; open an issue with the log from *View logs* → Share.
 
 ## Screenshots
 | | |
