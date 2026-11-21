@@ -873,7 +873,112 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             return true;
         }
 
+        // ---- Touch Mode (OSRS mobile style) ----
+        private final boolean mTouchMode = androidx.preference.PreferenceManager
+                .getDefaultSharedPreferences(JavaGUILauncherActivity.this)
+                .getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false);
+        private final float mZoomStep = 24 * getResources().getDisplayMetrics().density;
+        private boolean mCamDrag, mItemDrag, mHeld;
+        private float mPinchDist = -1, mPinchAcc;
+
+        // Hold: right click right away (same as normal mode).
+        private final Runnable mHold = () -> {
+            if (!mTracking || mCamDrag || mItemDrag) return;
+            mHeld = true;
+            mTextureView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            sendLocalMousePosition(mDownX, mDownY);
+            AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON3_DOWN_MASK);
+        };
+
+        private float pinchDistance(MotionEvent e) {
+            if (e.getPointerCount() < 2) return -1;
+            return (float) Math.hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1));
+        }
+
+        private void endTouchModeDrag(float x, float y) {
+            if (mCamDrag) AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON2_DOWN_MASK, false);
+            if (mItemDrag) {
+                sendLocalMousePosition(x, y);
+                AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK, false);
+            }
+            mCamDrag = mItemDrag = false;
+        }
+
+        /**
+         * Tap: left click. Drag: rotate the camera (middle-button drag). Pinch out/in: zoom in/out
+         * (mouse wheel). Hold: right click (menu). Three fingers: keyboard.
+         */
+        private boolean onTouchMode(MotionEvent event) {
+            int action = event.getActionMasked();
+            float x = event.getX(), y = event.getY();
+            if (action == MotionEvent.ACTION_POINTER_DOWN || mMultiTouch) {
+                if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                    mMultiTouch = true;
+                    mHandler.removeCallbacks(mHold);
+                    endTouchModeDrag(x, y);
+                    if (event.getPointerCount() == 3) toggleKeyboard(null);
+                    mPinchDist = pinchDistance(event);
+                    mPinchAcc = 0;
+                } else if (action == MotionEvent.ACTION_MOVE && event.getPointerCount() >= 2) {
+                    float d = pinchDistance(event);
+                    if (mPinchDist < 0) mPinchDist = d;
+                    mPinchAcc += d - mPinchDist;
+                    mPinchDist = d;
+                    if (Math.abs(mPinchAcc) >= mZoomStep) sendLocalMousePosition(centroidX(event), centroidY(event));
+                    while (mPinchAcc >= mZoomStep) { AWTInputBridge.sendScroll(1); mPinchAcc -= mZoomStep; }
+                    while (mPinchAcc <= -mZoomStep) { AWTInputBridge.sendScroll(-1); mPinchAcc += mZoomStep; }
+                } else if (action == MotionEvent.ACTION_POINTER_UP) {
+                    mPinchDist = -1;
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    mMultiTouch = false;
+                    mTracking = false;
+                    mPinchDist = -1;
+                }
+                return true;
+            }
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                    mDownX = x;
+                    mDownY = y;
+                    mHeld = mCamDrag = mItemDrag = false;
+                    mTracking = true;
+                    sendLocalMousePosition(x, y);
+                    mHandler.postDelayed(mHold, ViewConfiguration.getLongPressTimeout());
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (!mTracking) break;
+                    if (!mHeld && !mCamDrag && Math.hypot(x - mDownX, y - mDownY) > mTouchSlop) {
+                        mHandler.removeCallbacks(mHold);
+                        sendLocalMousePosition(mDownX, mDownY);
+                        mCamDrag = true;
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON2_DOWN_MASK, true);
+                    }
+                    if (mCamDrag || mItemDrag) sendLocalMousePosition(x, y);
+                    break;
+                case MotionEvent.ACTION_UP:
+                    if (!mTracking) break;
+                    mHandler.removeCallbacks(mHold);
+                    if (mCamDrag) {
+                        endTouchModeDrag(x, y);
+                    } else if (!mHeld) {
+                        sendLocalMousePosition(mDownX, mDownY);
+                        AWTInputBridge.sendMousePress(AWTInputEvent.BUTTON1_DOWN_MASK);
+                    }
+                    mTracking = false;
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    mHandler.removeCallbacks(mHold);
+                    endTouchModeDrag(x, y);
+                    mTracking = false;
+                    break;
+                default:
+                    break;
+            }
+            return true;
+        }
+
         boolean onTouch(MotionEvent event) {
+            if (mTouchMode) return onTouchMode(event);
             if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN || mMultiTouch) {
                 return onMultiTouch(event);
             }

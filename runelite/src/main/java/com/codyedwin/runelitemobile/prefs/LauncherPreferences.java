@@ -32,6 +32,8 @@ public class LauncherPreferences {
     public static final String PREF_KEY_RUNELITE_RENDER_SCALE = "runeliteRenderScale";
     /** In-game FPS / temperature overlay. */
     public static final String PREF_KEY_RUNELITE_STATS_OVERLAY = "runeliteStatsOverlay";
+    /** OSRS-mobile style touch: tap click, drag camera, pinch zoom, hold for menu / hold+drag for items. */
+    public static final String PREF_KEY_RUNELITE_TOUCH_MODE = "runeliteTouchMode";
     /** Move the game in from the left/right by the screen's corner radius (rounded corners). */
     public static final String PREF_KEY_RUNELITE_CORNER_PAD = "runeliteCornerPadding";
     /** In-game RSBuddy start/stop button (custom RuneLite only). */
