@@ -18,6 +18,8 @@ import net.runelite.client.plugins.PluginManager;
 final class PerformanceMode {
     static final boolean ENABLED = Boolean.getBoolean("runelite.android.performanceMode");
     private static final String STRETCHED = "net.runelite.client.plugins.stretchedmode.StretchedModePlugin";
+    /** Render resolution slider (percent of the screen); 0 = use the Stretched Mode settings. */
+    private static final int SCALE = Integer.getInteger("runelite.android.renderScale", 0);
 
     private PerformanceMode() {
     }
@@ -27,7 +29,10 @@ final class PerformanceMode {
         final int[] attempts = {0};
         Timer timer = new Timer(1000, null);
         timer.addActionListener(e -> {
-            if (tryStart() || ++attempts[0] > 60) timer.stop();
+            if (tryStart() || ++attempts[0] > 60) {
+                timer.stop();
+                applyScale();
+            }
         });
         timer.start();
     }
@@ -51,6 +56,19 @@ final class PerformanceMode {
             throw e;
         }
         RuneLite.getInjector().getInstance(net.runelite.client.eventbus.EventBus.class).register(p);
+    }
+
+    /** Stretched Mode renders resizable at real size / (1 + scalingFactor / 100). */
+    private static void applyScale() {
+        if (SCALE < 25 || SCALE >= 100) return;
+        try {
+            net.runelite.api.Client client = RuneLite.getInjector().getInstance(net.runelite.api.Client.class);
+            client.setScalingFactor((int) Math.round((100.0 / SCALE - 1) * 100));
+            client.invalidateStretching(true);
+            System.out.println("PerformanceMode: render resolution " + SCALE + "%");
+        } catch (Throwable t) {
+            System.err.println("PerformanceMode: " + t);
+        }
     }
 
     private static boolean tryStart() {

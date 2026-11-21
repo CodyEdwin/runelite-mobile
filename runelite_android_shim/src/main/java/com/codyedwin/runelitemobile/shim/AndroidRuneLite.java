@@ -39,6 +39,7 @@ public final class AndroidRuneLite {
         StallProfiler.install();
         HotspotProfiler.install();
         InputFocus.install();
+        DevPluginReloader.install();
         javax.swing.SwingUtilities.invokeLater(PerformanceMode::install);
         javax.swing.SwingUtilities.invokeLater(GpuMode::install);
 

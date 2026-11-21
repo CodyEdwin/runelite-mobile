@@ -219,6 +219,8 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
 
     /** Fast path (cacio17 / RuneLite): native copy into the bitmap, only when the screen changed. */
     private static volatile boolean sFastBlit;
+    /** Frames posted to the screen (FPS overlay). */
+    public static volatile int sFramesPosted;
     /** Set when the surface was (re)created or resized: post a full frame even if nothing changed. */
     private static volatile boolean sForceFrame;
 
@@ -268,6 +270,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                 } else {
                     force = false;
                     posted++;
+                    sFramesPosted++;
                 }
                 long now = System.nanoTime();
                 if (PERF_LOG && now - statsStart >= 5_000_000_000L) {
@@ -332,6 +335,7 @@ public class AWTCanvasView extends TextureView implements TextureView.SurfaceTex
                         surface.unlockCanvasAndPost(canvas);
                     }
                     posted++;
+                    sFramesPosted++;
                 }
                 long now = System.nanoTime();
                 if (PERF_LOG && now - statsStart >= 5_000_000_000L) {

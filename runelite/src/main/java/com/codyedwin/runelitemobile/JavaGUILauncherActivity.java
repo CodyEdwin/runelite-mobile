@@ -171,6 +171,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         findViewById(R.id.installmod_window_movedown).setOnTouchListener(this);
         findViewById(R.id.installmod_window_moveleft).setOnTouchListener(this);
         findViewById(R.id.installmod_window_moveright).setOnTouchListener(this);
+        if (mRuneLite) setupRuneLiteOverlays();
 
         mMousePointerImageView.post(() -> {
             ViewGroup.LayoutParams params = mMousePointerImageView.getLayoutParams();
@@ -390,9 +391,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 args.add("-ea");
                 args.add("-Djava.awt.headless=false");
                 // Read from disk: this activity runs in its own process (:gui_installer).
-                if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
-                        com.codyedwin.runelitemobile.prefs.LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false)) {
+                int renderScale = LauncherPreferences.renderScale(androidx.preference.PreferenceManager.getDefaultSharedPreferences(this));
+                if (renderScale < 100) {
                     args.add("-Drunelite.android.performanceMode=true");
+                    args.add("-Drunelite.android.renderScale=" + renderScale);
                 }
                 String gpuClasspath = "";
                 // Native helpers loaded by the shim (AAudio sound output, GPU mode).
@@ -758,6 +760,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
     @Override
     protected void onDestroy() {
+        mStatsHandler.removeCallbacksAndMessages(null);
         mMouseButtonState = 0;
         super.onDestroy();
     }
@@ -978,6 +981,92 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
         params.bottomMargin = (int) (6 * density);
         ((ViewGroup) findViewById(android.R.id.content)).addView(bar, params);
+    }
+
+    private final Handler mStatsHandler = new Handler(Looper.getMainLooper());
+
+    /** Optional FPS / temperature readout and RSBuddy start/stop button (launcher toggles). */
+    private void setupRuneLiteOverlays() {
+        android.content.SharedPreferences prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        float density = getResources().getDisplayMetrics().density;
+        ViewGroup content = findViewById(android.R.id.content);
+        if (prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false)) {
+            android.widget.TextView stats = new android.widget.TextView(this);
+            stats.setTextColor(0xFFFFFF00);
+            stats.setTextSize(11);
+            stats.setTypeface(android.graphics.Typeface.MONOSPACE);
+            stats.setShadowLayer(2, 1, 1, 0xFF000000);
+            stats.setBackgroundColor(0x66000000);
+            int pad = (int) (3 * density);
+            stats.setPadding(pad, pad / 2, pad, pad / 2);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.topMargin = lp.leftMargin = (int) (4 * density);
+            content.addView(stats, lp);
+            final File[] cpuZones = findCpuThermalZones();
+            mStatsHandler.post(new Runnable() {
+                int lastFrames = AWTCanvasView.sFramesPosted;
+                long lastTime = System.nanoTime();
+
+                @Override
+                public void run() {
+                    int frames = AWTCanvasView.sFramesPosted;
+                    long t = System.nanoTime();
+                    double fps = (frames - lastFrames) * 1e9 / Math.max(1, t - lastTime);
+                    lastFrames = frames;
+                    lastTime = t;
+                    StringBuilder sb = new StringBuilder(String.format(java.util.Locale.ROOT, "%.0f FPS", fps));
+                    android.content.Intent battery = registerReceiver(null, new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+                    if (battery != null) {
+                        sb.append(String.format(java.util.Locale.ROOT, "  bat %.1f°C", battery.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) / 10f));
+                    }
+                    float cpu = readMaxTemp(cpuZones);
+                    if (cpu > 0) sb.append(String.format(java.util.Locale.ROOT, "  cpu %.0f°C", cpu));
+                    stats.setText(sb);
+                    mStatsHandler.postDelayed(this, 1000);
+                }
+            });
+        }
+        if (Tools.useCustomRuneLite(this) && prefs.getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_RSBUDDY_BUTTON, true)) {
+            Button rsb = createKeyButton("RSBuddy ⏯", (int) (8 * density), (int) (4 * density));
+            rsb.setBackgroundColor(0x88000000);
+            rsb.setOnClickListener(v -> {
+                // RSBuddy's "Start/stop hotkey" (default Pause): stop, or restart the last routine.
+                AWTInputBridge.sendKey('\0', AWTInputEvent.VK_PAUSE, 1);
+                AWTInputBridge.sendKey('\0', AWTInputEvent.VK_PAUSE, 0);
+            });
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+            lp.leftMargin = (int) (4 * density);
+            content.addView(rsb, lp);
+        }
+    }
+
+    private static File[] findCpuThermalZones() {
+        List<File> zones = new ArrayList<>();
+        File[] all = new File("/sys/class/thermal").listFiles((d, n) -> n.startsWith("thermal_zone"));
+        if (all != null) for (File z : all) {
+            try {
+                String type = Tools.read(new File(z, "type").getAbsolutePath()).trim().toLowerCase(java.util.Locale.ROOT);
+                File temp = new File(z, "temp");
+                if ((type.contains("cpu") || type.contains("tsens") || type.contains("soc")) && temp.canRead()) zones.add(temp);
+            } catch (Exception ignored) {
+            }
+        }
+        return zones.toArray(new File[0]);
+    }
+
+    private static float readMaxTemp(File[] zones) {
+        float max = 0;
+        for (File z : zones) {
+            try {
+                float v = Float.parseFloat(Tools.read(z.getAbsolutePath()).trim());
+                if (v > 1000) v /= 1000f;
+                if (v > max && v < 150) max = v;
+            } catch (Exception ignored) {
+            }
+        }
+        return max;
     }
 
     private Button createKeyButton(String label, int horizontalPadding, int verticalPadding) {

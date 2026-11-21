@@ -28,6 +28,16 @@ public class LauncherPreferences {
     /** Opt-in RuneLite performance mode (Stretched Mode for the session: lower resolution, higher FPS). */
     public static final String PREF_KEY_RUNELITE_PERFORMANCE = "runelitePerformanceMode";
     public static final String PREF_KEY_RUNELITE_GPU = "runeliteGpuMode";
+    /** Render resolution in percent (100 = full; lower runs Stretched Mode for the session). */
+    public static final String PREF_KEY_RUNELITE_RENDER_SCALE = "runeliteRenderScale";
+    /** In-game FPS / temperature overlay. */
+    public static final String PREF_KEY_RUNELITE_STATS_OVERLAY = "runeliteStatsOverlay";
+    /** In-game RSBuddy start/stop button (custom RuneLite only). */
+    public static final String PREF_KEY_RUNELITE_RSBUDDY_BUTTON = "runeliteRsbuddyButton";
+
+    public static int renderScale(android.content.SharedPreferences p) {
+        return p.getInt(PREF_KEY_RUNELITE_RENDER_SCALE, p.getBoolean(PREF_KEY_RUNELITE_PERFORMANCE, false) ? 65 : 100);
+    }
     /** Load the bundled + user sideloaded RuneLite plugins (default on). */
     public static final String PREF_KEY_RUNELITE_SIDELOADED = "runeliteLoadSideloadedPlugins";
     /**

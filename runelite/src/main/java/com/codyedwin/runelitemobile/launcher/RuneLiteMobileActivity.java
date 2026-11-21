@@ -197,12 +197,17 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         right.setOrientation(LinearLayout.VERTICAL);
         rightScroll.addView(right);
 
-        right.addView(toggle("Performance mode (lower resolution, higher FPS)",
-                LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false));
+        Button scaleButton = (Button) action(renderScaleLabel(), null);
+        scaleButton.setOnClickListener(v -> chooseRenderScale(scaleButton));
+        right.addView(scaleButton);
         right.addView(toggle("GPU mode (experimental)",
                 LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
         right.addView(toggle("Use custom RuneLite (my plugins only)",
                 LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
+        right.addView(toggle("FPS / temperature overlay",
+                LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false));
+        right.addView(toggle("RSBuddy start/stop button (custom RuneLite)",
+                LauncherPreferences.PREF_KEY_RUNELITE_RSBUDDY_BUTTON, true));
         right.addView(toggle("Load sideloaded plugins",
                 LauncherPreferences.PREF_KEY_RUNELITE_SIDELOADED, true));
         right.addView(action("Choose sideloaded plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
@@ -217,7 +222,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         right.addView(action("Dev plugins: /sdcard/RuneLite/plugins", v -> sdcardPlugins()));
         right.addView(action("RuneLite version & updates", v -> RuneLiteUpdates.showDialog(this)));
         right.addView(action("Settings (memory)", v -> startActivity(new Intent(this, RuneLiteMobileSettingsActivity.class))));
-        right.addView(action("Share log file", v -> Tools.shareLog(this)));
+        right.addView(action("View logs", v -> showLogs()));
         right.addView(action("About RuneLite Mobile", v -> showAbout()));
 
         LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
@@ -445,6 +450,105 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 .setIcon(R.drawable.runelite_mobile_logo)
                 .setView(scroll)
                 .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    private String renderScaleLabel() {
+        int s = LauncherPreferences.renderScale(prefs);
+        return "Render resolution: " + s + "%" + (s >= 100 ? " (full)" : " (higher FPS)");
+    }
+
+    private void chooseRenderScale(Button button) {
+        int current = LauncherPreferences.renderScale(prefs);
+        TextView value = new TextView(this);
+        value.setGravity(Gravity.CENTER);
+        value.setTextSize(18);
+        android.widget.SeekBar bar = new android.widget.SeekBar(this);
+        bar.setMax(15); // 25..100 in steps of 5
+        bar.setProgress((current - 25) / 5);
+        value.setText(current + "%");
+        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar s, int p, boolean user) { value.setText((25 + p * 5) + "%"); }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s) { }
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s) { }
+        });
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(16), dp(24), 0);
+        box.addView(value);
+        box.addView(bar);
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Render resolution")
+                .setMessage("Lower renders the game at fewer pixels and stretches it to the screen (higher FPS). 100% = full resolution.")
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    prefs.edit().putInt(LauncherPreferences.PREF_KEY_RUNELITE_RENDER_SCALE, 25 + bar.getProgress() * 5).apply();
+                    button.setText(renderScaleLabel());
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void showLogs() {
+        List<File> logs = new java.util.ArrayList<>();
+        File latest = new File(Tools.DIR_GAME_HOME, "latestlog.txt");
+        if (latest.isFile()) logs.add(latest);
+        File client = new File(Tools.getRuneLiteDir(), ".runelite/logs/client.log");
+        if (client.isFile()) logs.add(client);
+        File[] crashes = Tools.getRuneLiteDir().listFiles((d, n) -> n.startsWith("hs_err_pid") && n.endsWith(".log"));
+        if (crashes != null) {
+            java.util.Arrays.sort(crashes, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            logs.addAll(java.util.Arrays.asList(crashes));
+        }
+        if (logs.isEmpty()) {
+            Toast.makeText(this, "No logs yet. Press PLAY first.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String[] names = new String[logs.size()];
+        java.text.DateFormat fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT);
+        for (int i = 0; i < names.length; i++) {
+            File f = logs.get(i);
+            names[i] = (f.getName().startsWith("hs_err") ? "Crash: " : "") + f.getName() + "  (" + fmt.format(new java.util.Date(f.lastModified())) + ")";
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Logs")
+                .setItems(names, (d, which) -> viewLog(logs.get(which)))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void viewLog(File file) {
+        String text;
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+            long max = 256 * 1024;
+            long start = Math.max(0, raf.length() - max);
+            byte[] b = new byte[(int) (raf.length() - start)];
+            raf.seek(start);
+            raf.readFully(b);
+            text = (start > 0 ? "… (last 256 KB)\n" : "") + new String(b, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            text = "Unable to read " + file + ": " + e;
+        }
+        final String content = text;
+        TextView tv = new TextView(this);
+        tv.setText(content);
+        tv.setTextSize(10);
+        tv.setTypeface(Typeface.MONOSPACE);
+        tv.setTextIsSelectable(true);
+        tv.setPadding(dp(8), dp(8), dp(8), dp(8));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(tv);
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(file.getName())
+                .setView(scroll)
+                .setPositiveButton("Share", (d, w) -> Tools.openPath(this, file, true))
+                .setNeutralButton("Copy", (d, w) -> {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText(file.getName(), content));
+                    Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Close", null)
                 .show();
     }
 
