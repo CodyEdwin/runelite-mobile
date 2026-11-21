@@ -201,8 +201,6 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 LauncherPreferences.PREF_KEY_RUNELITE_PERFORMANCE, false));
         right.addView(toggle("GPU mode (experimental)",
                 LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
-        right.addView(toggle("GPU renderer: Zink (Vulkan) instead of MobileGlues",
-                LauncherPreferences.PREF_KEY_RUNELITE_ZINK, false));
         right.addView(toggle("Use custom RuneLite (my plugins only)",
                 LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
         right.addView(toggle("Load sideloaded plugins",

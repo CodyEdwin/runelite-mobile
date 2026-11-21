@@ -12,21 +12,9 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
-#include <vulkan/vulkan.h>
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "rlawt", __VA_ARGS__)
 
 static void *mg;
-// Zink mode: mg is Mesa's libOSMesa (desktop GL on Vulkan) instead of MobileGlues; no EGL.
-static int osm; static void *octx; static uint8_t obuf[16 * 16 * 4];
-static void *(*p_OSMesaGetProcAddress)(const char *);
-static void *(*p_OSMesaCreateContextAttribs)(const int *, void *);
-static GLboolean (*p_OSMesaMakeCurrent)(void *, void *, GLenum, GLsizei, GLsizei);
-static void (*p_OSMesaDestroyContext)(void *);
-static void *sym(const char *n) {
-    void *f = osm && p_OSMesaGetProcAddress ? p_OSMesaGetProcAddress(n) : NULL;
-    return f ? f : dlsym(mg, n);
-}
-static void *osm_gpa(const GLubyte *n) { return p_OSMesaGetProcAddress((const char *) n); }
 static EGLDisplay dpy = EGL_NO_DISPLAY; static EGLContext ctx = EGL_NO_CONTEXT; static EGLSurface surf = EGL_NO_SURFACE;
 #define NPBO 3
 #define GPU_WAIT_NS 25000000ull
@@ -63,11 +51,7 @@ F(void, glTexImage2D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GL
 F(void, glTexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*))
 F(void, glTexParameteri, (GLenum, GLenum, GLint))
 #undef F
-static int ctxMake(int on) {
-    if (osm) return on ? p_OSMesaMakeCurrent(octx, obuf, GL_UNSIGNED_BYTE, 16, 16) : p_OSMesaMakeCurrent(NULL, NULL, 0, 0, 0);
-    return on ? p_eglMakeCurrent(dpy, surf, surf, ctx) : p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-}
-#define L(name) if (!(p_##name = sym(#name))) { LOG("missing %s", #name); return JNI_FALSE; }
+#define L(name) if (!(p_##name = dlsym(mg, #name))) { LOG("missing %s", #name); return JNI_FALSE; }
 
 // LWJGL loads this library as its "libGL" (org.lwjgl.opengl.libname) and resolves every GL
 // function through glXGetProcAddress below, which forwards to MobileGlues except for calls that
@@ -237,7 +221,7 @@ static void *resolve(const GLubyte *name) {
         if (!p_glTexImage2D) p_glTexImage2D = mgproc("glTexImage2D");
         if (!p_glTexSubImage2D) p_glTexSubImage2D = mgproc("glTexSubImage2D");
         if (!p_glTexParameteri) p_glTexParameteri = mgproc("glTexParameteri");
-        if (!osm && p_glTexImage2D && p_glTexSubImage2D && p_glTexParameteri && !getenv("RLAWT_NO_BGRA_SWIZZLE"))
+        if (p_glTexImage2D && p_glTexSubImage2D && p_glTexParameteri && !getenv("RLAWT_NO_BGRA_SWIZZLE"))
             return !strcmp(n, "glTexImage2D") ? (void *) w_glTexImage2D : (void *) w_glTexSubImage2D;
     }
     if (!strcmp(n, "glRenderbufferStorage")) return (void *) w_glRenderbufferStorage;
@@ -248,48 +232,6 @@ static void *resolve(const GLubyte *name) {
 __attribute__((visibility("default"))) void *glXGetProcAddressARB(const GLubyte *name) { return glXGetProcAddress(name); }
 
 #define JF(name) Java_net_runelite_rlawt_AWTContext_##name
-
-// Vulkan loader for Zink: Turnip (bundled Mesa Vulkan driver for Adreno) through libpojavexec's
-// linker-namespace loader, else the system driver. Mesa reads the handle from VULKAN_PTR.
-static void *vkLoader(void) {
-    const char *e = getenv("VULKAN_PTR");
-    if (e && *e) return (void *) (uintptr_t) strtoull(e, NULL, 16);
-    if (!getenv("RLAWT_NO_TURNIP")) setenv("POJAV_LOAD_TURNIP", "1", 1);
-    void *px = dlopen("libpojavexec.so", RTLD_NOW | RTLD_NOLOAD);
-    void *(*mlv)(void) = px ? (void *(*)(void)) dlsym(px, "maybe_load_vulkan") : NULL;
-    if (mlv) return mlv();
-    void *vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
-    char vb[32]; snprintf(vb, sizeof vb, "%llx", (unsigned long long) (uintptr_t) vk);
-    setenv("VULKAN_PTR", vb, 1);
-    return vk;
-}
-
-// Mesa 23's Zink dereferences a NULL screen (SIGSEGV in OSMesaCreateContextAttribs) when it can't
-// use the Vulkan driver, which is the case with Qualcomm's own Adreno driver.
-static int vkProbe(void *loader, char *out, size_t n) {
-    snprintf(out, n, "no Vulkan loader");
-    PFN_vkGetInstanceProcAddr gipa = loader ? (PFN_vkGetInstanceProcAddr) dlsym(loader, "vkGetInstanceProcAddr") : NULL;
-    if (!gipa) return 0;
-    PFN_vkCreateInstance ci = (PFN_vkCreateInstance) gipa(NULL, "vkCreateInstance");
-    VkApplicationInfo ai = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_1 };
-    VkInstanceCreateInfo ici = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai };
-    VkInstance inst;
-    if (!ci || ci(&ici, NULL, &inst) != VK_SUCCESS) { snprintf(out, n, "vkCreateInstance failed"); return 0; }
-    PFN_vkEnumeratePhysicalDevices epd = (PFN_vkEnumeratePhysicalDevices) gipa(inst, "vkEnumeratePhysicalDevices");
-    PFN_vkGetPhysicalDeviceProperties gpp = (PFN_vkGetPhysicalDeviceProperties) gipa(inst, "vkGetPhysicalDeviceProperties");
-    PFN_vkDestroyInstance di = (PFN_vkDestroyInstance) gipa(inst, "vkDestroyInstance");
-    uint32_t count = 1; VkPhysicalDevice dev; int ok = 0;
-    snprintf(out, n, "no Vulkan device");
-    if (epd && gpp && epd(inst, &count, &dev) >= 0 && count > 0) {
-        VkPhysicalDeviceProperties p; gpp(dev, &p);
-        snprintf(out, n, "%s, Vulkan %u.%u.%u", p.deviceName, VK_VERSION_MAJOR(p.apiVersion), VK_VERSION_MINOR(p.apiVersion), VK_VERSION_PATCH(p.apiVersion));
-        // Qualcomm's own driver crashes Zink; Turnip, Mali and others with Vulkan 1.1+ are tried.
-        ok = strstr(p.deviceName, "Turnip") != NULL || getenv("RLAWT_ZINK_ANY_DRIVER") != NULL
-            || (strstr(p.deviceName, "Adreno") == NULL && VK_API_VERSION_MINOR(p.apiVersion) >= 1);
-    }
-    if (di) di(inst, NULL);
-    return ok;
-}
 
 JNIEXPORT jstring JNICALL JF(nProbe)(JNIEnv *env, jclass c) {
     char b[200];
@@ -302,76 +244,28 @@ JNIEXPORT jstring JNICALL JF(nProbe)(JNIEnv *env, jclass c) {
 JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     if (mg) return JNI_TRUE;
     const char *path = (*env)->GetStringUTFChars(env, lib, 0);
-    char pathBuf[512]; snprintf(pathBuf, sizeof pathBuf, "%s", path);
+    mg = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!mg) LOG("dlopen %s: %s", path, dlerror());
     (*env)->ReleaseStringUTFChars(env, lib, path);
-    osm = strstr(pathBuf, "OSMesa") != NULL;
-    if (osm) {
-        char info[200];
-        int ok = vkProbe(vkLoader(), info, sizeof info);
-        fprintf(stderr, "rlawt: Zink Vulkan driver: %s%s\n", info, ok ? "" : " -> unsupported, using MobileGlues");
-        fflush(stderr);
-        if (ok) {
-            setenv("GALLIUM_DRIVER", "zink", 1);
-            setenv("MESA_ANDROID_NO_KMS_SWRAST", "1", 1);
-        } else {
-            osm = 0;
-            char *slash = strrchr(pathBuf, '/');
-            snprintf(slash ? slash + 1 : pathBuf, sizeof pathBuf - (slash ? (size_t) (slash + 1 - pathBuf) : 0), "libmobileglues.so");
-        }
-    }
-    mg = dlopen(pathBuf, RTLD_NOW | RTLD_GLOBAL);
-    if (!mg) LOG("dlopen %s: %s", pathBuf, dlerror());
     if (!mg) return JNI_FALSE;
-    if (osm) {
-        p_OSMesaGetProcAddress = dlsym(mg, "OSMesaGetProcAddress");
-        p_OSMesaCreateContextAttribs = dlsym(mg, "OSMesaCreateContextAttribs");
-        p_OSMesaMakeCurrent = dlsym(mg, "OSMesaMakeCurrent");
-        p_OSMesaDestroyContext = dlsym(mg, "OSMesaDestroyContext");
-        if (!p_OSMesaGetProcAddress || !p_OSMesaCreateContextAttribs || !p_OSMesaMakeCurrent || !p_OSMesaDestroyContext) {
-            LOG("libOSMesa is missing OSMesa entry points"); mg = NULL; return JNI_FALSE;
-        }
-        p_glXGetProcAddress = osm_gpa;
-    } else {
     L(eglGetDisplay) L(eglInitialize) L(eglBindAPI) L(eglChooseConfig) L(eglCreateContext) L(eglCreatePbufferSurface)
     L(eglMakeCurrent) L(eglGetError) L(eglDestroyContext) L(eglDestroySurface) L(eglSwapInterval)
-    L(glXGetProcAddress)
-    }
     L(glGetString) L(glGetIntegerv) L(glGetError) L(glGenFramebuffers) L(glBindFramebuffer) L(glGenRenderbuffers)
     L(glBindRenderbuffer) L(glRenderbufferStorage) L(glFramebufferRenderbuffer) L(glCheckFramebufferStatus)
     L(glDeleteFramebuffers) L(glDeleteRenderbuffers) L(glGenBuffers) L(glBindBuffer) L(glBufferData)
     L(glMapBufferRange) L(glUnmapBuffer) L(glReadPixels) L(glFlush)
-    L(glRenderbufferStorageMultisample)
-    p_glFenceSync = sym("glFenceSync"); p_glClientWaitSync = sym("glClientWaitSync"); p_glDeleteSync = sym("glDeleteSync");
+    L(glRenderbufferStorageMultisample) L(glXGetProcAddress)
+    p_glFenceSync = dlsym(mg, "glFenceSync"); p_glClientWaitSync = dlsym(mg, "glClientWaitSync"); p_glDeleteSync = dlsym(mg, "glDeleteSync");
     if (!p_glFenceSync || !p_glClientWaitSync || !p_glDeleteSync) { LOG("no sync objects, readback maps block"); p_glFenceSync = NULL; }
-    p_glBlitFramebuffer = sym("glBlitFramebuffer"); p_glIsEnabled = sym("glIsEnabled");
-    p_glEnable = sym("glEnable"); p_glDisable = sym("glDisable");
+    p_glBlitFramebuffer = dlsym(mg, "glBlitFramebuffer"); p_glIsEnabled = dlsym(mg, "glIsEnabled");
+    p_glEnable = dlsym(mg, "glEnable"); p_glDisable = dlsym(mg, "glDisable");
     if (!p_glBlitFramebuffer || !p_glIsEnabled || !p_glEnable || !p_glDisable) p_glBlitFramebuffer = NULL;
     char buf[32]; snprintf(buf, sizeof buf, "%llx", (unsigned long long) (uintptr_t) resolve);
     setenv("RLAWT_RESOLVER", buf, 1);
     return JNI_TRUE;
 }
 
-static jstring createOsm(JNIEnv *env) {
-    char err[200];
-    // GL_RGBA, no depth (we render into our own FBO); core 4.6 -> core 4.3 -> compat.
-    const int tries[3][11] = {
-        { 0x22, GL_RGBA, 0x30, 0, 0x33, 0x34, 0x36, 4, 0x37, 6, 0 },
-        { 0x22, GL_RGBA, 0x30, 0, 0x33, 0x34, 0x36, 4, 0x37, 3, 0 },
-        { 0x22, GL_RGBA, 0x30, 0, 0x33, 0x35, 0, 0, 0, 0, 0 },
-    };
-    for (int i = 0; i < 3 && !octx; i++) octx = p_OSMesaCreateContextAttribs(tries[i], NULL);
-    if (!octx) return (*env)->NewStringUTF(env, "OSMesaCreateContextAttribs failed (Zink/Vulkan unavailable?)");
-    if (!ctxMake(1)) return (*env)->NewStringUTF(env, "OSMesaMakeCurrent failed");
-    GLint compute = -1; p_glGetIntegerv(0x90EB, &compute);
-    GLint e = p_glGetError();
-    LOG("Zink GL_VERSION=%s GL_RENDERER=%s GLSL=%s", p_glGetString(GL_VERSION), p_glGetString(GL_RENDERER), p_glGetString(GL_SHADING_LANGUAGE_VERSION));
-    snprintf(err, sizeof err, "OK|%s|%s|%s|compute_invocations=%d%s", p_glGetString(GL_VERSION), p_glGetString(GL_RENDERER),
-        p_glGetString(GL_SHADING_LANGUAGE_VERSION), compute, e ? " (glGetIntegerv error)" : "");
-    return (*env)->NewStringUTF(env, err);
-}
-
 JNIEXPORT jstring JNICALL JF(nCreate)(JNIEnv *env, jclass c) {
-    if (osm) return createOsm(env);
     char err[160];
     dpy = p_eglGetDisplay(EGL_DEFAULT_DISPLAY);
     EGLint maj, min;
@@ -395,9 +289,11 @@ JNIEXPORT jstring JNICALL JF(nCreate)(JNIEnv *env, jclass c) {
     return (*env)->NewStringUTF(env, err);
 }
 
-JNIEXPORT void JNICALL JF(nMakeCurrent)(JNIEnv *env, jclass c, jboolean on) { ctxMake(on); }
+JNIEXPORT void JNICALL JF(nMakeCurrent)(JNIEnv *env, jclass c, jboolean on) {
+    if (on) p_eglMakeCurrent(dpy, surf, surf, ctx); else p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+}
 
-JNIEXPORT jint JNICALL JF(nSwapInterval)(JNIEnv *env, jclass c, jint i) { return osm ? 0 : p_eglSwapInterval(dpy, i) ? 0 : -1; }
+JNIEXPORT jint JNICALL JF(nSwapInterval)(JNIEnv *env, jclass c, jint i) { return p_eglSwapInterval(dpy, i) ? 0 : -1; }
 
 JNIEXPORT jint JNICALL JF(nFramebuffer)(JNIEnv *env, jclass c, jint w, jint h) {
     if (w < 1) w = 1; if (h < 1) h = 1;
@@ -553,15 +449,15 @@ JNIEXPORT jint JNICALL JF(nSwap)(JNIEnv *env, jclass c, jintArray dst, jintArray
 }
 
 JNIEXPORT void JNICALL JF(nDestroy)(JNIEnv *env, jclass c) {
-    if (ctx != EGL_NO_CONTEXT || octx) {
-        ctxMake(1);
+    if (ctx != EGL_NO_CONTEXT) {
+        p_eglMakeCurrent(dpy, surf, surf, ctx);
         for (int i = 0; i < NPBO; i++) { if (fence[i]) p_glDeleteSync(fence[i]); if (rfence[i]) p_glDeleteSync(rfence[i]); }
         for (int i = 0; i < NPBO; i++) if (rFbo[i]) { p_glDeleteFramebuffers(1, &rFbo[i]); p_glDeleteRenderbuffers(1, &rRb[i]); }
         if (fbo) { p_glDeleteFramebuffers(1, &fbo); GLuint rb[2] = { rbColor, rbDepth }; p_glDeleteRenderbuffers(2, rb); }
-        ctxMake(0);
-        if (osm) p_OSMesaDestroyContext(octx); else { p_eglDestroySurface(dpy, surf); p_eglDestroyContext(dpy, ctx); }
+        p_eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        p_eglDestroySurface(dpy, surf); p_eglDestroyContext(dpy, ctx);
     }
-    octx = NULL; ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; fw = fh = 0; cur = frames = 0;
+    ctx = EGL_NO_CONTEXT; surf = EGL_NO_SURFACE; fbo = rbColor = rbDepth = 0; fw = fh = 0; cur = frames = 0;
     memset(pbo, 0, sizeof pbo); memset(pboW, 0, sizeof pboW); memset(pboH, 0, sizeof pboH); memset(fence, 0, sizeof fence); memset(rfence, 0, sizeof rfence);
     memset(rFbo, 0, sizeof rFbo); memset(rRb, 0, sizeof rRb); memset(rW, 0, sizeof rW); memset(rH, 0, sizeof rH);
     free(stage); stage = NULL; stageCap = 0;
