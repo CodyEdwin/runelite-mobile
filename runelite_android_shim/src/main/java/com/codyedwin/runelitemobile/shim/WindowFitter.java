@@ -201,11 +201,20 @@ final class WindowFitter {
         sDecorated.put(frame, Boolean.TRUE);
         JFrame jFrame = (JFrame) frame;
         JRootPane rootPane = jFrame.getRootPane();
-        if (rootPane.getWindowDecorationStyle() != JRootPane.NONE) {
-            // Removes the look-and-feel drawn title bar (title, minimise/maximise/close).
-            // RuneLite's toolbar lives in the JMenuBar, which stays visible.
-            rootPane.setWindowDecorationStyle(JRootPane.NONE);
-        }
+        // Removes the look-and-feel drawn title bar (title, minimise/maximise/close), which showed
+        // as an empty black strip across the top. RuneLite (custom chrome) can set the decoration
+        // style again after this runs, so keep forcing it off.
+        rootPane.putClientProperty("JRootPane.useWindowDecorations", Boolean.FALSE);
+        if (rootPane.getWindowDecorationStyle() != JRootPane.NONE) rootPane.setWindowDecorationStyle(JRootPane.NONE);
+        rootPane.addPropertyChangeListener("windowDecorationStyle", e -> {
+            if (rootPane.getWindowDecorationStyle() != JRootPane.NONE) {
+                SwingUtilities.invokeLater(() -> {
+                    rootPane.setWindowDecorationStyle(JRootPane.NONE);
+                    rootPane.revalidate();
+                    rootPane.repaint();
+                });
+            }
+        });
         markMaximized(frame);
         SwingUtilities.invokeLater(() -> {
             ToolbarMover.relocate(jFrame);
