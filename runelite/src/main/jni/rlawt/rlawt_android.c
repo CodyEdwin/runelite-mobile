@@ -12,6 +12,7 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
+#include <vulkan/vulkan.h>
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "rlawt", __VA_ARGS__)
 
 static void *mg;
@@ -248,6 +249,47 @@ __attribute__((visibility("default"))) void *glXGetProcAddressARB(const GLubyte 
 
 #define JF(name) Java_net_runelite_rlawt_AWTContext_##name
 
+// Vulkan loader for Zink: Turnip (bundled Mesa Vulkan driver for Adreno) through libpojavexec's
+// linker-namespace loader, else the system driver. Mesa reads the handle from VULKAN_PTR.
+static void *vkLoader(void) {
+    const char *e = getenv("VULKAN_PTR");
+    if (e && *e) return (void *) (uintptr_t) strtoull(e, NULL, 16);
+    if (!getenv("RLAWT_NO_TURNIP")) setenv("POJAV_LOAD_TURNIP", "1", 1);
+    void *px = dlopen("libpojavexec.so", RTLD_NOW | RTLD_NOLOAD);
+    void *(*mlv)(void) = px ? (void *(*)(void)) dlsym(px, "maybe_load_vulkan") : NULL;
+    if (mlv) return mlv();
+    void *vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    char vb[32]; snprintf(vb, sizeof vb, "%llx", (unsigned long long) (uintptr_t) vk);
+    setenv("VULKAN_PTR", vb, 1);
+    return vk;
+}
+
+// Mesa 23's Zink dereferences a NULL screen (SIGSEGV in OSMesaCreateContextAttribs) when it can't
+// use the Vulkan driver, which is the case with Qualcomm's own Adreno driver. Only accept Turnip
+// (or any driver with RLAWT_ZINK_ANY_DRIVER set).
+static int vkProbe(void *loader, char *out, size_t n) {
+    snprintf(out, n, "no Vulkan loader");
+    PFN_vkGetInstanceProcAddr gipa = loader ? (PFN_vkGetInstanceProcAddr) dlsym(loader, "vkGetInstanceProcAddr") : NULL;
+    if (!gipa) return 0;
+    PFN_vkCreateInstance ci = (PFN_vkCreateInstance) gipa(NULL, "vkCreateInstance");
+    VkApplicationInfo ai = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_1 };
+    VkInstanceCreateInfo ici = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai };
+    VkInstance inst;
+    if (!ci || ci(&ici, NULL, &inst) != VK_SUCCESS) { snprintf(out, n, "vkCreateInstance failed"); return 0; }
+    PFN_vkEnumeratePhysicalDevices epd = (PFN_vkEnumeratePhysicalDevices) gipa(inst, "vkEnumeratePhysicalDevices");
+    PFN_vkGetPhysicalDeviceProperties gpp = (PFN_vkGetPhysicalDeviceProperties) gipa(inst, "vkGetPhysicalDeviceProperties");
+    PFN_vkDestroyInstance di = (PFN_vkDestroyInstance) gipa(inst, "vkDestroyInstance");
+    uint32_t count = 1; VkPhysicalDevice dev; int ok = 0;
+    snprintf(out, n, "no Vulkan device");
+    if (epd && gpp && epd(inst, &count, &dev) >= 0 && count > 0) {
+        VkPhysicalDeviceProperties p; gpp(dev, &p);
+        snprintf(out, n, "%s, Vulkan %u.%u.%u", p.deviceName, VK_VERSION_MAJOR(p.apiVersion), VK_VERSION_MINOR(p.apiVersion), VK_VERSION_PATCH(p.apiVersion));
+        ok = strstr(p.deviceName, "Turnip") != NULL || getenv("RLAWT_ZINK_ANY_DRIVER") != NULL;
+    }
+    if (di) di(inst, NULL);
+    return ok;
+}
+
 JNIEXPORT jstring JNICALL JF(nProbe)(JNIEnv *env, jclass c) {
     char b[200];
     snprintf(b, sizeof b, "mg=%p glGetError=%p glGetString=%p glGetIntegerv=%p", mg,
@@ -259,20 +301,25 @@ JNIEXPORT jstring JNICALL JF(nProbe)(JNIEnv *env, jclass c) {
 JNIEXPORT jboolean JNICALL JF(nInit)(JNIEnv *env, jclass c, jstring lib) {
     if (mg) return JNI_TRUE;
     const char *path = (*env)->GetStringUTFChars(env, lib, 0);
-    osm = strstr(path, "OSMesa") != NULL;
-    if (osm) {
-        // Mesa's Zink reads the Vulkan loader handle from VULKAN_PTR (Pojav convention).
-        if (!getenv("VULKAN_PTR")) {
-            void *vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
-            char vb[32]; snprintf(vb, sizeof vb, "%llx", (unsigned long long) (uintptr_t) vk);
-            setenv("VULKAN_PTR", vb, 1);
-        }
-        setenv("GALLIUM_DRIVER", "zink", 1);
-        setenv("MESA_ANDROID_NO_KMS_SWRAST", "1", 1);
-    }
-    mg = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-    if (!mg) LOG("dlopen %s: %s", path, dlerror());
+    char pathBuf[512]; snprintf(pathBuf, sizeof pathBuf, "%s", path);
     (*env)->ReleaseStringUTFChars(env, lib, path);
+    osm = strstr(pathBuf, "OSMesa") != NULL;
+    if (osm) {
+        char info[200];
+        int ok = vkProbe(vkLoader(), info, sizeof info);
+        fprintf(stderr, "rlawt: Zink Vulkan driver: %s%s\n", info, ok ? "" : " -> unsupported, using MobileGlues");
+        fflush(stderr);
+        if (ok) {
+            setenv("GALLIUM_DRIVER", "zink", 1);
+            setenv("MESA_ANDROID_NO_KMS_SWRAST", "1", 1);
+        } else {
+            osm = 0;
+            char *slash = strrchr(pathBuf, '/');
+            snprintf(slash ? slash + 1 : pathBuf, sizeof pathBuf - (slash ? (size_t) (slash + 1 - pathBuf) : 0), "libmobileglues.so");
+        }
+    }
+    mg = dlopen(pathBuf, RTLD_NOW | RTLD_GLOBAL);
+    if (!mg) LOG("dlopen %s: %s", pathBuf, dlerror());
     if (!mg) return JNI_FALSE;
     if (osm) {
         p_OSMesaGetProcAddress = dlsym(mg, "OSMesaGetProcAddress");
