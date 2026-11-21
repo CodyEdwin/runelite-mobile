@@ -204,6 +204,8 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
                 LauncherPreferences.PREF_KEY_RUNELITE_GPU, false));
         right.addView(toggle("Use custom RuneLite (my plugins only)",
                 LauncherPreferences.PREF_KEY_RUNELITE_CUSTOM, false));
+        right.addView(toggle("Pad game from rounded screen corners",
+                LauncherPreferences.PREF_KEY_RUNELITE_CORNER_PAD, false));
         right.addView(toggle("FPS / temperature overlay",
                 LauncherPreferences.PREF_KEY_RUNELITE_STATS_OVERLAY, false));
         right.addView(toggle("RSBuddy start/stop button (custom RuneLite)",

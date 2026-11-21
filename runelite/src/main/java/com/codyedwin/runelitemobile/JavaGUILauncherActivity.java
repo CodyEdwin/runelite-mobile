@@ -1061,6 +1061,9 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
     private void keepGameInSafeArea() {
         View root = ((ViewGroup) findViewById(android.R.id.content)).getChildAt(0);
         if (root == null) return;
+        final boolean cornerPad = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_CORNER_PAD, false);
+        final int fallbackCorner = (int) (16 * getResources().getDisplayMetrics().density);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             int l = 0, t = 0, r = 0, b = 0;
             if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -1076,6 +1079,18 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                     l = Math.max(l, w.left); t = Math.max(t, w.top); r = Math.max(r, w.right); b = Math.max(b, w.bottom);
                 }
             }
+            if (cornerPad) {
+                int cl = fallbackCorner, cr = fallbackCorner;
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    cl = Math.max(cornerRadius(insets, android.view.RoundedCorner.POSITION_TOP_LEFT),
+                            cornerRadius(insets, android.view.RoundedCorner.POSITION_BOTTOM_LEFT));
+                    cr = Math.max(cornerRadius(insets, android.view.RoundedCorner.POSITION_TOP_RIGHT),
+                            cornerRadius(insets, android.view.RoundedCorner.POSITION_BOTTOM_RIGHT));
+                    if (cl == 0 && cr == 0) cl = cr = fallbackCorner;
+                }
+                l = Math.max(l, cl);
+                r = Math.max(r, cr);
+            }
             if (v.getPaddingLeft() != l || v.getPaddingTop() != t || v.getPaddingRight() != r || v.getPaddingBottom() != b) {
                 Log.i("JavaGUILauncher", "game safe area padding " + l + "," + t + "," + r + "," + b);
                 v.setPadding(l, t, r, b);
@@ -1083,6 +1098,12 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             return insets;
         });
         root.requestApplyInsets();
+    }
+
+    @android.annotation.TargetApi(31)
+    private static int cornerRadius(android.view.WindowInsets insets, int position) {
+        android.view.RoundedCorner c = insets.getRoundedCorner(position);
+        return c == null ? 0 : c.getRadius();
     }
 
     private void applyCutoutInset(View v, FrameLayout.LayoutParams lp) {
