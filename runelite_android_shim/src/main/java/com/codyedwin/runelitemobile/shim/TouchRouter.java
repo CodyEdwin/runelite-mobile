@@ -58,8 +58,11 @@ final class TouchRouter extends java.awt.EventQueue {
             Client client = client();
             Component canvas = client == null ? null : client.getCanvas();
             if (canvas == null || e.getComponent() != canvas) {
-                mode = Mode.CAMERA;
-                return e;
+                // Swing (sidebar icon strip, plugin panels): a swipe scrolls whatever is under it.
+                mode = canvas == null ? Mode.CAMERA : Mode.SCROLL;
+                lastY = e.getY();
+                scrollAcc = 0;
+                return mode == Mode.SCROLL ? null : e;
             }
             startSnapshots();
             int x = e.getX(), y = e.getY();
