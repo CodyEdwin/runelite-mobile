@@ -54,6 +54,7 @@ final class SideBarStyle {
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
         sidebar.revalidate();
         sidebar.repaint();
+        System.out.println("SideBarStyle: applied to " + sidebar.getClass().getName() + ", showing=" + sidebar.isShowing());
     }
 
     private static JToggleButton key(String label, int keyCode, JComponent sidebar) {

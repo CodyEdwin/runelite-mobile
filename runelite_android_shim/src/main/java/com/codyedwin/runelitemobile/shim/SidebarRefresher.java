@@ -61,6 +61,7 @@ final class SidebarRefresher {
         if (!sEnabled) return;
         sTick++;
         JComponent sb = sidebar();
+        if (sb != null && sb.getClientProperty("JTabbedPane.leadingComponent") == null) SideBarStyle.apply(sb);
         if (sb == null || !sb.isShowing()) return;
         String sig = signature(sb);
         boolean changed = !sig.equals(sSignature);
