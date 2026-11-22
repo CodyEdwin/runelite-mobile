@@ -41,7 +41,7 @@ final class SideBarStyle {
             sidebar.putClientProperty("JTabbedPane.scrollButtonsPolicy", "never");
         }
         sidebar.putClientProperty("FlatLaf.style",
-                "tabInsets: 10,12,10,12; variableSize: true; deselectable: true; tabHeight: 40;"
+                "tabInsets: 14,16,14,16; variableSize: true; deselectable: true; tabHeight: 52;"
                         + " tabAreaInsets: 4,0,4,0; background: #161616");
         JPanel keys = new JPanel();
         keys.setOpaque(true);
@@ -84,7 +84,7 @@ final class SideBarStyle {
                 g2.setStroke(new BasicStroke(1.6f));
                 g2.setColor(on ? KEY_ON : KEY_EDGE);
                 g2.drawRoundRect(1, 1, w, h, 14, 14);
-                g2.setFont(getFont());
+                g2.setFont(getFont().deriveFont(Font.BOLD, 15f));
                 g2.setColor(on ? KEY_ON : KEY_TEXT);
                 int tw = g2.getFontMetrics().stringWidth(label);
                 g2.drawString(label, (getWidth() - tw) / 2,
@@ -97,7 +97,7 @@ final class SideBarStyle {
         button.setContentAreaFilled(false);
         button.setBorderPainted(false);
         button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        Dimension size = new Dimension(50, 30);
+        Dimension size = new Dimension(64, 42);
         button.setPreferredSize(size);
         button.setMaximumSize(size);
         button.setMinimumSize(size);
