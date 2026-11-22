@@ -42,7 +42,7 @@ final class SideBarStyle {
             sidebar.putClientProperty("JTabbedPane.tabsPopupPolicy", "never");
         }
         sidebar.putClientProperty("FlatLaf.style",
-                "tabInsets: 14,16,14,16; variableSize: true; deselectable: true; tabHeight: 52;"
+                "tabInsets: 14,4,14,4; variableSize: true; minimumTabWidth: 72; maximumTabWidth: 72; showContentSeparator: false; deselectable: true; tabHeight: 52;"
                         + " tabAreaInsets: 4,0,4,0; background: #161616");
         JPanel list = new JPanel();
         list.setOpaque(true);
@@ -127,10 +127,9 @@ final class SideBarStyle {
         if (tabs.getSelectedIndex() >= 0 || tabs.getTabCount() == 0) {
             tabs.setPreferredSize(null);
         } else {
-            int w = tabs.getBoundsAt(0) != null ? tabs.getBoundsAt(0).width : 0;
-            Object lead = tabs.getClientProperty("JTabbedPane.leadingComponent");
-            if (lead instanceof Component) w = Math.max(w, ((Component) lead).getPreferredSize().width);
-            tabs.setPreferredSize(new Dimension(Math.max(w, 60) + 2, tabs.getHeight()));
+            // Exactly the strip width (72px: 64px buttons + 4px each side), no empty content area.
+            java.awt.Insets in = tabs.getInsets();
+            tabs.setPreferredSize(new Dimension(72 + in.left + in.right, tabs.getHeight()));
         }
         if (tabs.getParent() != null) tabs.getParent().revalidate();
     }
