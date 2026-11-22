@@ -43,19 +43,33 @@ final class SideBarStyle {
         sidebar.putClientProperty("FlatLaf.style",
                 "tabInsets: 14,16,14,16; variableSize: true; deselectable: true; tabHeight: 52;"
                         + " tabAreaInsets: 4,0,4,0; background: #161616");
+        JPanel list = new JPanel();
+        list.setOpaque(true);
+        list.setBackground(STRIP);
+        list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
+        String[] pins = System.getProperty("runelite.android.pinnedKeys", "Shift,Ctrl,Alt,Space,1,2,3,4").split(",");
+        for (String pin : pins) {
+            int code = keyCode(pin.trim());
+            if (code == KeyEvent.VK_UNDEFINED) continue;
+            list.add(javax.swing.Box.createVerticalStrut(4));
+            list.add(code == KeyEvent.VK_SHIFT || code == KeyEvent.VK_ALT || code == KeyEvent.VK_CONTROL
+                    ? key(pin.trim(), code, sidebar) : tap(pin.trim(), code));
+        }
+        list.setVisible(false);
+        JToggleButton toggle = key("Keys", KeyEvent.VK_UNDEFINED, null);
+        for (java.awt.event.ActionListener l : toggle.getActionListeners()) toggle.removeActionListener(l);
+        toggle.addActionListener(e -> {
+            list.setVisible(toggle.isSelected());
+            sidebar.revalidate();
+            sidebar.repaint();
+        });
         JPanel keys = new JPanel();
         keys.setOpaque(true);
         keys.setBackground(STRIP);
         keys.setLayout(new BoxLayout(keys, BoxLayout.Y_AXIS));
         keys.setBorder(BorderFactory.createEmptyBorder(6, 4, 6, 4));
-        String[] pins = System.getProperty("runelite.android.pinnedKeys", "Shift,Ctrl,Alt,Space,1,2,3,4").split(",");
-        for (String pin : pins) {
-            int code = keyCode(pin.trim());
-            if (code == KeyEvent.VK_UNDEFINED) continue;
-            keys.add(code == KeyEvent.VK_SHIFT || code == KeyEvent.VK_ALT || code == KeyEvent.VK_CONTROL
-                    ? key(pin.trim(), code, sidebar) : tap(pin.trim(), code));
-            keys.add(javax.swing.Box.createVerticalStrut(4));
-        }
+        keys.add(toggle);
+        keys.add(list);
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
         // RuneLite hides the whole strip when the sidebar is closed; keep the strip and just close the panel.
         sidebar.addComponentListener(new java.awt.event.ComponentAdapter() {
@@ -65,6 +79,11 @@ final class SideBarStyle {
             }
         });
         if (!sidebar.isVisible()) keepStrip(sidebar);
+        if (sidebar instanceof javax.swing.JTabbedPane) {
+            javax.swing.JTabbedPane tabs = (javax.swing.JTabbedPane) sidebar;
+            tabs.addChangeListener(e -> fitStrip(tabs));
+            fitStrip(tabs);
+        }
         sidebar.revalidate();
         sidebar.repaint();
         System.out.println("SideBarStyle: applied to " + sidebar.getClass().getName() + ", showing=" + sidebar.isShowing());
@@ -106,6 +125,37 @@ final class SideBarStyle {
             if (sidebar != null) sidebar.repaint();
         });
         return button;
+    }
+
+    /** With no panel open, the sidebar is only as wide as its strip (no empty panel area). */
+    private static void fitStrip(javax.swing.JTabbedPane tabs) {
+        if (tabs.getSelectedIndex() >= 0 || tabs.getTabCount() == 0) {
+            tabs.setPreferredSize(null);
+        } else {
+            int w = tabs.getBoundsAt(0) != null ? tabs.getBoundsAt(0).width : 0;
+            Object lead = tabs.getClientProperty("JTabbedPane.leadingComponent");
+            if (lead instanceof Component) w = Math.max(w, ((Component) lead).getPreferredSize().width);
+            tabs.setPreferredSize(new Dimension(Math.max(w, 60) + 2, tabs.getHeight()));
+        }
+        if (tabs.getParent() != null) tabs.getParent().revalidate();
+    }
+
+    /** Hides every bottom toolbar button except the screenshot one, leaving room for the icon list. */
+    static void trimToolbar(JComponent sidebar) {
+        Object trailing = sidebar.getClientProperty("JTabbedPane.trailingComponent");
+        if (trailing instanceof java.awt.Container) trim((java.awt.Container) trailing);
+    }
+
+    private static void trim(java.awt.Container c) {
+        for (Component child : c.getComponents()) {
+            if (child instanceof javax.swing.AbstractButton) {
+                String tip = ((javax.swing.AbstractButton) child).getToolTipText();
+                boolean keep = tip != null && tip.toLowerCase().contains("screenshot");
+                if (child.isVisible() != keep) child.setVisible(keep);
+            } else if (child instanceof java.awt.Container) {
+                trim((java.awt.Container) child);
+            }
+        }
     }
 
     private static void keepStrip(JComponent sidebar) {

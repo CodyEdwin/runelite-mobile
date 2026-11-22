@@ -62,6 +62,7 @@ final class SidebarRefresher {
         sTick++;
         JComponent sb = sidebar();
         if (sb != null && sb.getClientProperty("JTabbedPane.leadingComponent") == null) SideBarStyle.apply(sb);
+        if (sb != null && (sTick % 15) == 0 && !Boolean.getBoolean("runelite.android.classicSidebar")) SideBarStyle.trimToolbar(sb);
         if (sb == null || !sb.isShowing()) return;
         String sig = signature(sb);
         boolean changed = !sig.equals(sSignature);
