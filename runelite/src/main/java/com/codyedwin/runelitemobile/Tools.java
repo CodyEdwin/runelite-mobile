@@ -1035,4 +1035,57 @@ public final class Tools {
         return (info.isConnected());
     }
 
+
+    /** Downloads the latest custom plugin jars into /sdcard/RuneLite/custom-plugins; a running game hot-reloads them. */
+    public static String updateCustomPlugins(Context context) {
+        String result;
+        try {
+            File dir = getSdcardCustomPluginDir();
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            String[] names = context.getAssets().list(RUNELITE_CUSTOM_PLUGINS_ASSET);
+            int updated = 0, same = 0;
+            StringBuilder failed = new StringBuilder();
+            for (String name : names == null ? new String[0] : names) {
+                if (!name.endsWith(".jar")) continue;
+                try {
+                    byte[] data = download(CUSTOM_PLUGINS_URL + name);
+                    File target = new File(dir, name);
+                    if (target.isFile() && java.util.Arrays.equals(data, org.apache.commons.io.FileUtils.readFileToByteArray(target))) {
+                        same++;
+                        continue;
+                    }
+                    File part = new File(dir, "." + name + ".part");
+                    org.apache.commons.io.FileUtils.writeByteArrayToFile(part, data);
+                    if (!part.renameTo(target)) throw new java.io.IOException("rename failed");
+                    updated++;
+                } catch (Exception e) {
+                    failed.append(' ').append(name);
+                    android.util.Log.w("RuneLitePlugins", "Update " + name + " failed", e);
+                }
+            }
+            result = updated + " updated, " + same + " already current"
+                    + (failed.length() > 0 ? ", failed:" + failed : "")
+                    + (useCustomRuneLite(context) ? "" : ". Used only with custom RuneLite on.");
+        } catch (Exception e) {
+            result = "Plugin update failed: " + e.getMessage();
+        }
+        return result;
+    }
+
+    private static byte[] download(String url) throws java.io.IOException {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+        c.setInstanceFollowRedirects(true);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        try {
+            if (c.getResponseCode() != 200) throw new java.io.IOException("HTTP " + c.getResponseCode());
+            try (java.io.InputStream in = c.getInputStream()) {
+                return org.apache.commons.io.IOUtils.toByteArray(in);
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
 }

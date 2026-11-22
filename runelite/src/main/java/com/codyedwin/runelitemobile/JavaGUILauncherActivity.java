@@ -712,6 +712,21 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) return super.dispatchKeyEvent(event);
 
+        if (keyCode == KeyEvent.KEYCODE_U && mRuneLite && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS)
+                == (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (!Tools.hasAllFilesAccess()) {
+                    Toast.makeText(this, "Plugin update needs All files access", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "Updating custom plugins...", Toast.LENGTH_SHORT).show();
+                    new Thread(() -> {
+                        String result = Tools.updateCustomPlugins(this);
+                        runOnUiThread(() -> Toast.makeText(this, result, Toast.LENGTH_LONG).show());
+                    }, "UpdateCustomPlugins").start();
+                }
+            }
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_B && mBatteryView != null && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS)
                 == (KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
