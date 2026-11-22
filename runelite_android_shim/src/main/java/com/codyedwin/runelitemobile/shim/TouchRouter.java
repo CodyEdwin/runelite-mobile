@@ -21,12 +21,13 @@ import net.runelite.api.widgets.Widget;
  */
 final class TouchRouter extends java.awt.EventQueue {
     private static final int SCROLL_STEP_PX = Integer.getInteger("runelite.android.swipeStep", 14);
-    private enum Mode { NONE, CAMERA, LEFT, SCROLL }
+    private enum Mode { NONE, CAMERA, LEFT, SCROLL, SWING }
 
     private static Client sClient;
     private Mode mode = Mode.NONE;
     private int lastY;
     private int scrollAcc;
+    private javax.swing.JViewport viewport;
 
     private TouchRouter() {
     }
@@ -57,18 +58,24 @@ final class TouchRouter extends java.awt.EventQueue {
         if (id == MouseEvent.MOUSE_PRESSED && e.getButton() == MouseEvent.BUTTON2) {
             Client client = client();
             Component canvas = client == null ? null : client.getCanvas();
-            if (canvas == null || e.getComponent() != canvas) {
-                // Swing (sidebar icon strip, plugin panels): a swipe scrolls whatever is under it.
-                mode = canvas == null ? Mode.CAMERA : Mode.SCROLL;
-                lastY = e.getY();
-                scrollAcc = 0;
-                return mode == Mode.SCROLL ? null : e;
+            javax.swing.JViewport port = canvas == null ? null : swingViewportAt(e);
+            if (port != null) {
+                // Swing (sidebar icon strip, plugin panels): a swipe drags the list under the finger.
+                mode = Mode.SWING;
+                viewport = port;
+                lastY = e.getYOnScreen();
+                return null;
+            }
+            if (canvas == null || !isCanvasEvent(e, canvas)) {
+                mode = Mode.CAMERA;
+                return e;
             }
             startSnapshots();
-            int x = e.getX(), y = e.getY();
+            java.awt.Point cp = javax.swing.SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), canvas);
+            int x = cp.x, y = cp.y;
             if (contains(sScroll, x, y)) {
                 mode = Mode.SCROLL;
-                lastY = y;
+                lastY = e.getY();
                 scrollAcc = 0;
                 return null;
             }
@@ -95,6 +102,21 @@ final class TouchRouter extends java.awt.EventQueue {
                 }
                 if (id == MouseEvent.MOUSE_RELEASED) mode = Mode.NONE;
                 return null;
+            case SWING:
+                if (id == MouseEvent.MOUSE_DRAGGED || id == MouseEvent.MOUSE_RELEASED) {
+                    int dy = lastY - e.getYOnScreen();
+                    lastY = e.getYOnScreen();
+                    java.awt.Component view = viewport.getView();
+                    if (view != null && dy != 0) {
+                        java.awt.Point p = viewport.getViewPosition();
+                        int max = Math.max(0, view.getHeight() - viewport.getExtentSize().height);
+                        p.y = Math.max(0, Math.min(max, p.y + dy));
+                        viewport.setViewPosition(p);
+                        viewport.repaint();
+                    }
+                }
+                if (id == MouseEvent.MOUSE_RELEASED) { mode = Mode.NONE; viewport = null; }
+                return null;
             case LEFT:
                 if (id == MouseEvent.MOUSE_RELEASED) mode = Mode.NONE;
                 return left(e);
@@ -104,6 +126,36 @@ final class TouchRouter extends java.awt.EventQueue {
             default:
                 return e;
         }
+    }
+
+    private static boolean isCanvasEvent(MouseEvent e, Component canvas) {
+        Component src = e.getComponent();
+        if (src == canvas) return true;
+        if (src == null || !canvas.isShowing()) return false;
+        java.awt.Point p = javax.swing.SwingUtilities.convertPoint(src, e.getPoint(), canvas);
+        return canvas.contains(p);
+    }
+
+    /** The scrollable Swing viewport under the press (outside the game canvas), or null. */
+    private static javax.swing.JViewport swingViewportAt(MouseEvent e) {
+        Component src = e.getComponent();
+        if (src == null) return null;
+        java.awt.Window w = src instanceof java.awt.Window ? (java.awt.Window) src
+                : javax.swing.SwingUtilities.getWindowAncestor(src);
+        if (w == null) return null;
+        java.awt.Point p = javax.swing.SwingUtilities.convertPoint(src, e.getPoint(), w);
+        Component hit = javax.swing.SwingUtilities.getDeepestComponentAt(w, p.x, p.y);
+        Client client = client();
+        Component canvas = client == null ? null : client.getCanvas();
+        for (Component c = hit; c != null; c = c.getParent()) {
+            if (c == canvas) return null;
+            if (c instanceof javax.swing.JViewport) {
+                javax.swing.JViewport port = (javax.swing.JViewport) c;
+                Component view = port.getView();
+                if (view != null && view.getHeight() > port.getExtentSize().height) return port;
+            }
+        }
+        return null;
     }
 
     private static MouseEvent left(MouseEvent e) {
