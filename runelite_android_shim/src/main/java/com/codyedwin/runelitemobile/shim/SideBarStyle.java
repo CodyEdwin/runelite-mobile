@@ -134,22 +134,38 @@ final class SideBarStyle {
         if (tabs.getParent() != null) tabs.getParent().revalidate();
     }
 
-    /** Hides every bottom toolbar button except the screenshot one, leaving room for the icon list. */
+    private static final String TRAILING = "rlm-trailing";
+
+    /** Replaces the bottom toolbar with a compact panel holding only the screenshot button. */
     static void trimToolbar(JComponent sidebar) {
         Object trailing = sidebar.getClientProperty("JTabbedPane.trailingComponent");
-        if (trailing instanceof java.awt.Container) trim((java.awt.Container) trailing);
+        if (!(trailing instanceof java.awt.Container) || TRAILING.equals(((Component) trailing).getName())) return;
+        javax.swing.AbstractButton shot = find((java.awt.Container) trailing);
+        if (shot == null) return;
+        shot.getParent().remove(shot);
+        shot.setVisible(true);
+        JPanel panel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 0, 4));
+        panel.setName(TRAILING);
+        panel.setOpaque(true);
+        panel.setBackground(STRIP);
+        panel.add(shot);
+        panel.setMaximumSize(panel.getPreferredSize());
+        sidebar.putClientProperty("JTabbedPane.trailingComponent", panel);
+        sidebar.revalidate();
+        sidebar.repaint();
     }
 
-    private static void trim(java.awt.Container c) {
+    private static javax.swing.AbstractButton find(java.awt.Container c) {
         for (Component child : c.getComponents()) {
             if (child instanceof javax.swing.AbstractButton) {
                 String tip = ((javax.swing.AbstractButton) child).getToolTipText();
-                boolean keep = tip != null && tip.toLowerCase().contains("screenshot");
-                if (child.isVisible() != keep) child.setVisible(keep);
+                if (tip != null && tip.toLowerCase().contains("screenshot")) return (javax.swing.AbstractButton) child;
             } else if (child instanceof java.awt.Container) {
-                trim((java.awt.Container) child);
+                javax.swing.AbstractButton b = find((java.awt.Container) child);
+                if (b != null) return b;
             }
         }
+        return null;
     }
 
     private static void keepStrip(JComponent sidebar) {
