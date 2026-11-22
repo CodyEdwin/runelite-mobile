@@ -71,13 +71,7 @@ final class SideBarStyle {
         keys.add(toggle);
         keys.add(list);
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
-        // RuneLite hides the whole strip when the sidebar is closed; keep the strip and just close the panel.
-        sidebar.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override
-            public void componentHidden(java.awt.event.ComponentEvent e) {
-                javax.swing.SwingUtilities.invokeLater(() -> keepStrip(sidebar));
-            }
-        });
+        // Start with the strip showing even if RuneLite saved the sidebar as closed; hiding later still works.
         if (!sidebar.isVisible()) keepStrip(sidebar);
         if (sidebar instanceof javax.swing.JTabbedPane) {
             javax.swing.JTabbedPane tabs = (javax.swing.JTabbedPane) sidebar;
