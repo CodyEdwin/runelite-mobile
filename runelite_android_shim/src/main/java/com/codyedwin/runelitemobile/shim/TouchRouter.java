@@ -61,21 +61,17 @@ final class TouchRouter extends java.awt.EventQueue {
                 mode = Mode.CAMERA;
                 return e;
             }
-            Widget hit = null;
-            try {
-                hit = hitTest(client, e.getX(), e.getY());
-            } catch (Throwable t) {
-                // widget tree changed mid-walk; treat as the game world
-            }
-            if (hit == null) {
-                mode = Mode.CAMERA;
-                return e;
-            }
-            if (scrollable(hit) != null) {
+            startSnapshots();
+            int x = e.getX(), y = e.getY();
+            if (contains(sScroll, x, y)) {
                 mode = Mode.SCROLL;
-                lastY = e.getY();
+                lastY = y;
                 scrollAcc = 0;
                 return null;
+            }
+            if (!contains(sUi, x, y)) {
+                mode = Mode.CAMERA;
+                return e;
             }
             mode = Mode.LEFT;
             return left(e);
@@ -115,41 +111,65 @@ final class TouchRouter extends java.awt.EventQueue {
                 e.getClickCount(), false, button);
     }
 
-    /** Deepest visible interface widget under the point, ignoring full-screen containers. */
-    private static Widget hitTest(Client client, int x, int y) {
-        Widget[] roots = client.getWidgetRoots();
-        if (roots == null) return null;
-        Component canvas = client.getCanvas();
-        int fullW = canvas.getWidth() * 9 / 10, fullH = canvas.getHeight() * 9 / 10;
-        Widget best = null;
-        for (int i = roots.length - 1; i >= 0 && best == null; i--) {
-            best = deepest(roots[i], x, y, fullW, fullH);
-        }
-        return best;
+    private static volatile Rectangle[] sUi = new Rectangle[0];
+    private static volatile Rectangle[] sScroll = new Rectangle[0];
+    private static boolean sSnapshotting;
+    private static long sLastSnap;
+
+    private static boolean contains(Rectangle[] rects, int x, int y) {
+        for (Rectangle r : rects) if (r.contains(x, y)) return true;
+        return false;
     }
 
-    private static Widget deepest(Widget w, int x, int y, int fullW, int fullH) {
-        if (w == null || w.isHidden()) return null;
+    /** Widget APIs are client-thread only (asserted with -ea), so geometry is snapshotted there. */
+    private static void startSnapshots() {
+        if (sSnapshotting) return;
+        try {
+            net.runelite.client.callback.ClientThread thread = net.runelite.client.RuneLite.getInjector()
+                    .getInstance(net.runelite.client.callback.ClientThread.class);
+            sSnapshotting = true;
+            thread.invokeLater(() -> {
+                long now = System.nanoTime();
+                if (now - sLastSnap > 100_000_000L) {
+                    sLastSnap = now;
+                    try {
+                        snapshot(client());
+                    } catch (Throwable t) {
+                        // widget tree changed mid-walk; keep the last snapshot
+                    }
+                }
+                return false;
+            });
+        } catch (Throwable t) {
+            // injector not ready yet; retry on the next press
+        }
+    }
+
+    private static void snapshot(Client client) {
+        if (client == null) return;
+        Widget[] roots = client.getWidgetRoots();
+        Component canvas = client.getCanvas();
+        if (roots == null || canvas == null) return;
+        java.util.List<Rectangle> ui = new java.util.ArrayList<>(), scroll = new java.util.ArrayList<>();
+        int fullW = canvas.getWidth() * 9 / 10, fullH = canvas.getHeight() * 9 / 10;
+        for (Widget root : roots) walk(root, fullW, fullH, ui, scroll, 0);
+        sUi = ui.toArray(new Rectangle[0]);
+        sScroll = scroll.toArray(new Rectangle[0]);
+    }
+
+    private static void walk(Widget w, int fullW, int fullH, java.util.List<Rectangle> ui,
+                             java.util.List<Rectangle> scroll, int depth) {
+        if (w == null || depth > 24 || w.isHidden()) return;
         Rectangle b = w.getBounds();
-        if (b == null || !b.contains(x, y)) return null;
+        if (b == null || b.width <= 0 || b.height <= 0) return;
+        boolean fullScreen = b.width >= fullW && b.height >= fullH;
+        if (w.getScrollHeight() > w.getHeight() && w.getHeight() > 0) scroll.add(b);
+        else if (!fullScreen && w.getType() != 0) ui.add(b);
         Widget[][] kids = {w.getDynamicChildren(), w.getNestedChildren(), w.getStaticChildren()};
         for (Widget[] group : kids) {
             if (group == null) continue;
-            for (int i = group.length - 1; i >= 0; i--) {
-                Widget hit = deepest(group[i], x, y, fullW, fullH);
-                if (hit != null) return hit;
-            }
+            for (Widget k : group) walk(k, fullW, fullH, ui, scroll, depth + 1);
         }
-        boolean fullScreen = b.width >= fullW && b.height >= fullH;
-        boolean drawn = w.getType() != 0 || w.getScrollHeight() > w.getHeight();
-        return !fullScreen && drawn ? w : null;
-    }
-
-    private static Widget scrollable(Widget w) {
-        for (Widget p = w; p != null; p = p.getParent()) {
-            if (p.getScrollHeight() > p.getHeight() && p.getHeight() > 0) return p;
-        }
-        return null;
     }
 
     private static Client client() {
