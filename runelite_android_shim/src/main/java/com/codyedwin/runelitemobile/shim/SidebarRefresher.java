@@ -34,6 +34,8 @@ final class SidebarRefresher {
     private static String sSignature = "";
     private static int sTick;
     private static int sPendingA = -1, sPendingB = -1;
+    private static String sFrameSig = "";
+    private static int sFrameA = -1, sFrameB = -1, sFrameC = -1;
     private static volatile boolean sInputHit;
 
     private SidebarRefresher() {
@@ -63,6 +65,22 @@ final class SidebarRefresher {
         JComponent sb = sidebar();
         if (sb != null && sb.getClientProperty("JTabbedPane.leadingComponent") == null) SideBarStyle.apply(sb);
         if (sb != null && (sTick % 15) == 0 && !Boolean.getBoolean("runelite.android.classicSidebar")) SideBarStyle.trimToolbar(sb);
+        if (sb != null) {
+            // Opening/closing the sidebar resizes the whole window; repaint all of it a few times
+            // or the old strip/panel stays half drawn.
+            Rectangle r = sb.getBounds();
+            int sel = sb instanceof JTabbedPane ? ((JTabbedPane) sb).getSelectedIndex() : 0;
+            String fs = sb.isVisible() + ":" + r.x + "," + r.width + "," + r.height + ":" + sel;
+            if (!fs.equals(sFrameSig)) {
+                sFrameSig = fs;
+                sFrameA = sTick + 2;
+                sFrameB = sTick + 8;
+                sFrameC = sTick + 20;
+                repaintWindow(sb);
+            } else if (sTick == sFrameA || sTick == sFrameB || sTick == sFrameC) {
+                repaintWindow(sb);
+            }
+        }
         if (sb == null || !sb.isShowing()) return;
         String sig = signature(sb);
         boolean changed = !sig.equals(sSignature);
@@ -76,6 +94,19 @@ final class SidebarRefresher {
         }
         if (sTick == sPendingA || sTick == sPendingB || (SAFETY_TICKS > 0 && sTick % SAFETY_TICKS == 0)) {
             sb.repaint();
+        }
+    }
+
+    private static void repaintWindow(JComponent sb) {
+        java.awt.Window w = SwingUtilities.getWindowAncestor(sb);
+        if (w == null) return;
+        w.invalidate();
+        w.validate();
+        if (w instanceof javax.swing.RootPaneContainer) {
+            javax.swing.JRootPane root = ((javax.swing.RootPaneContainer) w).getRootPane();
+            root.paintImmediately(0, 0, root.getWidth(), root.getHeight());
+        } else {
+            w.repaint();
         }
     }
 

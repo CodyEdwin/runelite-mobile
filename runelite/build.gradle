@@ -108,8 +108,8 @@ android {
         applicationId "com.codyedwin.runelitemobile"
         minSdkVersion 21
         targetSdkVersion 34
-        versionCode 30000512
-        versionName "0.5.12"
+        versionCode 30000513
+        versionName "0.5.13"
         multiDexEnabled true //important
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
