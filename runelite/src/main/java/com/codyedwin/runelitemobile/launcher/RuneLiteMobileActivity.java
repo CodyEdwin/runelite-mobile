@@ -269,6 +269,7 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         tiles.addView(tile("⧉", "Plugins", v -> startActivity(new Intent(this, RuneLitePluginsActivity.class))));
         tiles.addView(tile("≡", "Logs", v -> showLogs()));
         tiles.addView(tile("⚙", "Settings", v -> showSettings(true)));
+        tiles.addView(tile("⟳", "Update", v -> updateCustomPlugins()));
         controls.addView(tiles);
 
         if (wide) {
