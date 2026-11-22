@@ -43,9 +43,14 @@ final class SideBarStyle {
         keys.setBackground(STRIP);
         keys.setLayout(new BoxLayout(keys, BoxLayout.Y_AXIS));
         keys.setBorder(BorderFactory.createEmptyBorder(6, 4, 6, 4));
-        keys.add(key("Shift", KeyEvent.VK_SHIFT, sidebar));
-        keys.add(javax.swing.Box.createVerticalStrut(8));
-        keys.add(key("Alt", KeyEvent.VK_ALT, sidebar));
+        String[] pins = System.getProperty("runelite.android.pinnedKeys", "Shift,Ctrl,Alt,Space,1,2,3,4").split(",");
+        for (String pin : pins) {
+            int code = keyCode(pin.trim());
+            if (code == KeyEvent.VK_UNDEFINED) continue;
+            keys.add(code == KeyEvent.VK_SHIFT || code == KeyEvent.VK_ALT || code == KeyEvent.VK_CONTROL
+                    ? key(pin.trim(), code, sidebar) : tap(pin.trim(), code));
+            keys.add(javax.swing.Box.createVerticalStrut(6));
+        }
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
         sidebar.revalidate();
         sidebar.repaint();
@@ -78,13 +83,46 @@ final class SideBarStyle {
         button.setContentAreaFilled(false);
         button.setBorderPainted(false);
         button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        Dimension size = new Dimension(54, 42);
+        Dimension size = new Dimension(54, 36);
         button.setPreferredSize(size);
         button.setMaximumSize(size);
         button.setMinimumSize(size);
         button.addActionListener(e -> {
             sendKey(keyCode, button.isSelected());
-            sidebar.repaint();
+            if (sidebar != null) sidebar.repaint();
+        });
+        return button;
+    }
+
+    private static int keyCode(String name) {
+        switch (name) {
+            case "Shift": return KeyEvent.VK_SHIFT;
+            case "Ctrl": return KeyEvent.VK_CONTROL;
+            case "Alt": return KeyEvent.VK_ALT;
+            case "Space": return KeyEvent.VK_SPACE;
+            case "Enter": return KeyEvent.VK_ENTER;
+            case "Esc": return KeyEvent.VK_ESCAPE;
+            default:
+                return name.length() == 1 && Character.isDigit(name.charAt(0))
+                        ? KeyEvent.VK_0 + (name.charAt(0) - '0') : KeyEvent.VK_UNDEFINED;
+        }
+    }
+
+    /** A one-shot key: press and release, with the key's character for typed input. */
+    private static JToggleButton tap(String label, int keyCode) {
+        JToggleButton button = key(label, keyCode, null);
+        for (java.awt.event.ActionListener l : button.getActionListeners()) button.removeActionListener(l);
+        button.addActionListener(e -> {
+            button.setSelected(false);
+            sendKey(keyCode, true);
+            char c = keyCode == KeyEvent.VK_SPACE ? ' ' : keyCode == KeyEvent.VK_ENTER ? '\n'
+                    : keyCode >= KeyEvent.VK_0 && keyCode <= KeyEvent.VK_9 ? (char) ('0' + keyCode - KeyEvent.VK_0) : 0;
+            Component canvas = gameCanvas();
+            if (c != 0 && canvas != null) {
+                Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(new KeyEvent(canvas, KeyEvent.KEY_TYPED,
+                        System.currentTimeMillis(), 0, KeyEvent.VK_UNDEFINED, c));
+            }
+            sendKey(keyCode, false);
         });
         return button;
     }
@@ -93,10 +131,12 @@ final class SideBarStyle {
     private static void sendKey(int keyCode, boolean down) {
         Component canvas = gameCanvas();
         if (canvas == null) return;
-        int modifier = keyCode == KeyEvent.VK_SHIFT ? KeyEvent.SHIFT_DOWN_MASK : KeyEvent.ALT_DOWN_MASK;
+        int modifier = keyCode == KeyEvent.VK_SHIFT ? KeyEvent.SHIFT_DOWN_MASK
+                : keyCode == KeyEvent.VK_ALT ? KeyEvent.ALT_DOWN_MASK
+                : keyCode == KeyEvent.VK_CONTROL ? KeyEvent.CTRL_DOWN_MASK : 0;
         KeyEvent event = new KeyEvent(canvas, down ? KeyEvent.KEY_PRESSED : KeyEvent.KEY_RELEASED,
                 System.currentTimeMillis(), down ? modifier : 0, keyCode, KeyEvent.CHAR_UNDEFINED,
-                KeyEvent.KEY_LOCATION_LEFT);
+                modifier != 0 ? KeyEvent.KEY_LOCATION_LEFT : KeyEvent.KEY_LOCATION_STANDARD);
         EventQueue queue = Toolkit.getDefaultToolkit().getSystemEventQueue();
         queue.postEvent(event);
     }

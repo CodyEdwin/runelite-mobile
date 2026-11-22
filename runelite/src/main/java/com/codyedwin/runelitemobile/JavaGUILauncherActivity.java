@@ -404,6 +404,10 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 // Native helpers loaded by the shim (AAudio sound output, GPU mode).
                 args.add("-Drunelite.android.nativeDir=" + getApplicationInfo().nativeLibraryDir);
                 if (Tools.useCustomRuneLite(this)) args.add("-Drunelite.android.custom=true");
+                if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                        .getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false)) {
+                    args.add("-Drunelite.android.touchMode=true");
+                }
                 // GPU mode (experimental): RuneLite's GPU plugin on MobileGlues (desktop GL over GLES)
                 // through an offscreen EGL context (see net.runelite.rlawt.AWTContext in the shim).
                 if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
