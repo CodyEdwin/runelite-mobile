@@ -35,8 +35,13 @@ final class SideBarStyle {
     static void apply(JComponent sidebar) {
         if (Boolean.getBoolean("runelite.android.classicSidebar")) return;
         sidebar.setBackground(STRIP);
+        if (sidebar instanceof javax.swing.JTabbedPane) {
+            // One scrollable column instead of RuneLite's wrapped multi-column grid.
+            ((javax.swing.JTabbedPane) sidebar).setTabLayoutPolicy(javax.swing.JTabbedPane.SCROLL_TAB_LAYOUT);
+            sidebar.putClientProperty("JTabbedPane.scrollButtonsPolicy", "never");
+        }
         sidebar.putClientProperty("FlatLaf.style",
-                "tabInsets: 10,12,10,12; variableSize: true; deselectable: true; tabHeight: 46;"
+                "tabInsets: 10,12,10,12; variableSize: true; deselectable: true; tabHeight: 40;"
                         + " tabAreaInsets: 4,0,4,0; background: #161616");
         JPanel keys = new JPanel();
         keys.setOpaque(true);
@@ -49,7 +54,7 @@ final class SideBarStyle {
             if (code == KeyEvent.VK_UNDEFINED) continue;
             keys.add(code == KeyEvent.VK_SHIFT || code == KeyEvent.VK_ALT || code == KeyEvent.VK_CONTROL
                     ? key(pin.trim(), code, sidebar) : tap(pin.trim(), code));
-            keys.add(javax.swing.Box.createVerticalStrut(6));
+            keys.add(javax.swing.Box.createVerticalStrut(4));
         }
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
         // RuneLite hides the whole strip when the sidebar is closed; keep the strip and just close the panel.
@@ -92,7 +97,7 @@ final class SideBarStyle {
         button.setContentAreaFilled(false);
         button.setBorderPainted(false);
         button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        Dimension size = new Dimension(54, 36);
+        Dimension size = new Dimension(50, 30);
         button.setPreferredSize(size);
         button.setMaximumSize(size);
         button.setMinimumSize(size);
