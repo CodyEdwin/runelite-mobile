@@ -34,9 +34,12 @@ final class ToolbarMover {
                               .invoke(injector, clientUiClass);
 
             Field withTitleBar = field(clientUiClass, "withTitleBar");
-            if (!withTitleBar.getBoolean(ui)) return;
             JPanel toolbar = (JPanel) field(clientUiClass, "toolbarPanel").get(ui);
             JComponent sidebar = (JComponent) field(clientUiClass, "sidebar").get(ui);
+            if (sidebar != null && sidebar.getClientProperty("JTabbedPane.leadingComponent") == null) {
+                SideBarStyle.apply(sidebar);
+            }
+            if (!withTitleBar.getBoolean(ui)) return;
             if (toolbar == null || sidebar == null) return;
 
             Container parent = toolbar.getParent();
