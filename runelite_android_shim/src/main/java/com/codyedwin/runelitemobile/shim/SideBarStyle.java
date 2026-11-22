@@ -42,7 +42,7 @@ final class SideBarStyle {
             sidebar.putClientProperty("JTabbedPane.tabsPopupPolicy", "never");
         }
         sidebar.putClientProperty("FlatLaf.style",
-                "tabInsets: 14,4,14,4; variableSize: true; minimumTabWidth: 72; maximumTabWidth: 72; showContentSeparator: false; deselectable: true; tabHeight: 52;"
+                "tabInsets: 14,4,14,4; minimumTabWidth: 72; maximumTabWidth: 72; showContentSeparator: false; tabHeight: 52;"
                         + " tabAreaInsets: 4,0,4,0; background: #161616");
         JPanel list = new JPanel();
         list.setOpaque(true);
@@ -60,9 +60,15 @@ final class SideBarStyle {
         JToggleButton toggle = key("Keys", KeyEvent.VK_UNDEFINED, null);
         for (java.awt.event.ActionListener l : toggle.getActionListeners()) toggle.removeActionListener(l);
         toggle.addActionListener(e -> {
+            if (debounced(toggle)) return;
+            if (!toggle.isSelected()) {
+                // Closing the key list must not leave hidden modifiers held.
+                for (Component c : list.getComponents()) {
+                    if (c instanceof JToggleButton && ((JToggleButton) c).isSelected()) ((JToggleButton) c).doClick(0);
+                }
+            }
             list.setVisible(toggle.isSelected());
-            sidebar.revalidate();
-            sidebar.repaint();
+            relayout(sidebar);
         });
         JPanel keys = new JPanel();
         keys.setOpaque(true);
@@ -116,8 +122,13 @@ final class SideBarStyle {
         button.setMaximumSize(size);
         button.setMinimumSize(size);
         button.addActionListener(e -> {
-            sendKey(keyCode, button.isSelected());
-            if (sidebar != null) sidebar.repaint();
+            if (debounced(button)) return;
+            boolean down = button.isSelected();
+            int mask = modifierMask(keyCode);
+            sHeld = down ? sHeld | mask : sHeld & ~mask;
+            System.out.println("SideBarStyle: " + label + (down ? " held" : " released") + ", held mask " + sHeld);
+            sendKey(keyCode, down);
+            button.paintImmediately(button.getVisibleRect());
         });
         return button;
     }
@@ -193,9 +204,12 @@ final class SideBarStyle {
     /** A one-shot key: press and release, with the key's character for typed input. */
     private static JToggleButton tap(String label, int keyCode) {
         JToggleButton button = key(label, keyCode, null);
+        button.putClientProperty("rlm-kind", "tap");
         for (java.awt.event.ActionListener l : button.getActionListeners()) button.removeActionListener(l);
         button.addActionListener(e -> {
             button.setSelected(false);
+            if (debounced(button)) return;
+            System.out.println("SideBarStyle: tap " + label);
             sendKey(keyCode, true);
             char c = keyCode == KeyEvent.VK_SPACE ? ' ' : keyCode == KeyEvent.VK_ENTER ? '\n'
                     : keyCode >= KeyEvent.VK_0 && keyCode <= KeyEvent.VK_9 ? (char) ('0' + keyCode - KeyEvent.VK_0) : 0;
@@ -213,14 +227,45 @@ final class SideBarStyle {
     private static void sendKey(int keyCode, boolean down) {
         Component canvas = gameCanvas();
         if (canvas == null) return;
-        int modifier = keyCode == KeyEvent.VK_SHIFT ? KeyEvent.SHIFT_DOWN_MASK
-                : keyCode == KeyEvent.VK_ALT ? KeyEvent.ALT_DOWN_MASK
-                : keyCode == KeyEvent.VK_CONTROL ? KeyEvent.CTRL_DOWN_MASK : 0;
+        int modifier = modifierMask(keyCode);
+        // Modifiers reflect every key still held (e.g. Shift stays in the mask while Ctrl is pressed).
         KeyEvent event = new KeyEvent(canvas, down ? KeyEvent.KEY_PRESSED : KeyEvent.KEY_RELEASED,
-                System.currentTimeMillis(), down ? modifier : 0, keyCode, KeyEvent.CHAR_UNDEFINED,
+                System.currentTimeMillis(), down ? sHeld | modifier : sHeld & ~modifier, keyCode, KeyEvent.CHAR_UNDEFINED,
                 modifier != 0 ? KeyEvent.KEY_LOCATION_LEFT : KeyEvent.KEY_LOCATION_STANDARD);
         EventQueue queue = Toolkit.getDefaultToolkit().getSystemEventQueue();
         queue.postEvent(event);
+    }
+
+    private static volatile int sHeld;
+
+    private static int modifierMask(int keyCode) {
+        return keyCode == KeyEvent.VK_SHIFT ? KeyEvent.SHIFT_DOWN_MASK
+                : keyCode == KeyEvent.VK_ALT ? KeyEvent.ALT_DOWN_MASK
+                : keyCode == KeyEvent.VK_CONTROL ? KeyEvent.CTRL_DOWN_MASK : 0;
+    }
+
+    /**
+     * A touch can arrive as two clicks in quick succession, which toggles a key on and straight
+     * back off (or vice versa). Ignore a second action on the same button within 300 ms.
+     */
+    private static boolean debounced(javax.swing.AbstractButton button) {
+        long now = System.currentTimeMillis();
+        Object last = button.getClientProperty("rlm-last");
+        button.putClientProperty("rlm-last", now);
+        if (last instanceof Long && now - (Long) last < 300) {
+            if (button instanceof JToggleButton && !"tap".equals(button.getClientProperty("rlm-kind"))) {
+                button.setSelected(!button.isSelected());
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static void relayout(JComponent sidebar) {
+        sidebar.revalidate();
+        java.awt.Window w = javax.swing.SwingUtilities.getWindowAncestor(sidebar);
+        if (w != null) w.validate();
+        sidebar.paintImmediately(0, 0, sidebar.getWidth(), sidebar.getHeight());
     }
 
     private static Component gameCanvas() {
