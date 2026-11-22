@@ -52,6 +52,14 @@ final class SideBarStyle {
             keys.add(javax.swing.Box.createVerticalStrut(6));
         }
         sidebar.putClientProperty("JTabbedPane.leadingComponent", keys);
+        // RuneLite hides the whole strip when the sidebar is closed; keep the strip and just close the panel.
+        sidebar.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentHidden(java.awt.event.ComponentEvent e) {
+                javax.swing.SwingUtilities.invokeLater(() -> keepStrip(sidebar));
+            }
+        });
+        if (!sidebar.isVisible()) keepStrip(sidebar);
         sidebar.revalidate();
         sidebar.repaint();
         System.out.println("SideBarStyle: applied to " + sidebar.getClass().getName() + ", showing=" + sidebar.isShowing());
@@ -93,6 +101,14 @@ final class SideBarStyle {
             if (sidebar != null) sidebar.repaint();
         });
         return button;
+    }
+
+    private static void keepStrip(JComponent sidebar) {
+        if (sidebar.isVisible()) return;
+        if (sidebar instanceof javax.swing.JTabbedPane) ((javax.swing.JTabbedPane) sidebar).setSelectedIndex(-1);
+        sidebar.setVisible(true);
+        if (sidebar.getParent() != null) sidebar.getParent().revalidate();
+        sidebar.repaint();
     }
 
     private static int keyCode(String name) {
