@@ -39,6 +39,7 @@ final class SideBarStyle {
             // One scrollable column instead of RuneLite's wrapped multi-column grid.
             ((javax.swing.JTabbedPane) sidebar).setTabLayoutPolicy(javax.swing.JTabbedPane.SCROLL_TAB_LAYOUT);
             sidebar.putClientProperty("JTabbedPane.scrollButtonsPolicy", "never");
+            sidebar.putClientProperty("JTabbedPane.tabsPopupPolicy", "never");
         }
         sidebar.putClientProperty("FlatLaf.style",
                 "tabInsets: 14,16,14,16; variableSize: true; deselectable: true; tabHeight: 52;"
