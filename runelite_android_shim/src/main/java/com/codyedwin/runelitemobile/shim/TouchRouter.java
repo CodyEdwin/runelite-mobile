@@ -35,6 +35,8 @@ final class TouchRouter extends java.awt.EventQueue {
     static void install() {
         if (!Boolean.getBoolean("runelite.android.touchMode")) return;
         Toolkit.getDefaultToolkit().getSystemEventQueue().push(new TouchRouter());
+        // Hover tooltips never get a mouse-exit on touch and were left half-drawn on screen.
+        javax.swing.SwingUtilities.invokeLater(() -> javax.swing.ToolTipManager.sharedInstance().setEnabled(false));
         System.out.println("TouchRouter: installed");
     }
 
