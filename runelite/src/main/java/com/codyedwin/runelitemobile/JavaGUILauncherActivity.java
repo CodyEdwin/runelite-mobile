@@ -586,13 +586,13 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             dx += e.getHistoricalX(i);
             dy += e.getHistoricalY(i);
         }
-        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 80f);
+        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 30f);
         for (int i = 0; i < steps; i++) {
             mFpsX = Math.max(0, Math.min(w - 1, mFpsX + dx / steps));
             mFpsY = Math.max(0, Math.min(h - 1, mFpsY + dy / steps));
             sendFpsCursor();
         }
-        if (mFpsX < w * 0.125f || mFpsX > w * 0.75f || mFpsY < h * 0.125f || mFpsY > h * 0.875f) {
+        if (mFpsX < w * 0.2f || mFpsX > w * 0.7f || mFpsY < h * 0.25f || mFpsY > h * 0.75f) {
             mFpsX = homeX;
             mFpsY = homeY;
             sendFpsCursor();
