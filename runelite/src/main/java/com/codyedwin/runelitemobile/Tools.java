@@ -258,6 +258,7 @@ public final class Tools {
 
     /** Release the "Update custom plugins" button downloads jars from (scripts/publish_custom_plugins.sh). */
     public static final String CUSTOM_PLUGINS_URL = "https://github.com/CodyEdwin/runelite-mobile/releases/download/custom-plugins/";
+    private static final String CUSTOM_PLUGINS_API = "https://api.github.com/repos/CodyEdwin/runelite-mobile/releases/tags/custom-plugins";
 
     public static boolean hasAllFilesAccess() {
         return SDK_INT < 30 || Environment.isExternalStorageManager();
@@ -1043,10 +1044,12 @@ public final class Tools {
             File dir = getSdcardCustomPluginDir();
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
-            String[] names = context.getAssets().list(RUNELITE_CUSTOM_PLUGINS_ASSET);
+            java.util.Set<String> names = new java.util.TreeSet<>(releasePluginNames());
+            String[] bundled = context.getAssets().list(RUNELITE_CUSTOM_PLUGINS_ASSET);
+            if (bundled != null) names.addAll(java.util.Arrays.asList(bundled));
             int updated = 0, same = 0;
             StringBuilder failed = new StringBuilder();
-            for (String name : names == null ? new String[0] : names) {
+            for (String name : names) {
                 if (!name.endsWith(".jar")) continue;
                 try {
                     byte[] data = download(CUSTOM_PLUGINS_URL + name);
@@ -1071,6 +1074,31 @@ public final class Tools {
             result = "Plugin update failed: " + e.getMessage();
         }
         return result;
+    }
+
+    /** Every jar on the custom-plugins release, so new plugins arrive without an APK update. */
+    private static java.util.List<String> releasePluginNames() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        try {
+            String index = new String(download(CUSTOM_PLUGINS_URL + "plugins.txt"), java.nio.charset.StandardCharsets.UTF_8);
+            for (String line : index.split("\\s+")) {
+                if (line.endsWith(".jar") && line.indexOf('/') < 0) names.add(line);
+            }
+            if (!names.isEmpty()) return names;
+        } catch (Exception e) {
+            android.util.Log.w("RuneLitePlugins", "plugins.txt missing, trying the GitHub API", e);
+        }
+        try {
+            String json = new String(download(CUSTOM_PLUGINS_API), java.nio.charset.StandardCharsets.UTF_8);
+            org.json.JSONArray assets = new org.json.JSONObject(json).getJSONArray("assets");
+            for (int i = 0; i < assets.length(); i++) {
+                String name = assets.getJSONObject(i).getString("name");
+                if (name.endsWith(".jar") && name.indexOf('/') < 0) names.add(name);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("RuneLitePlugins", "Release listing failed, using bundled plugin list", e);
+        }
+        return names;
     }
 
     private static byte[] download(String url) throws java.io.IOException {
