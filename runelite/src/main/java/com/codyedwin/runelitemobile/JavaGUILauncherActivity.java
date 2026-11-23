@@ -156,9 +156,6 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         mLoggerView = findViewById(R.id.launcherLoggerView);
         mMousePointerImageView = findViewById(R.id.main_mouse_pointer);
         mTextureView = findViewById(R.id.installmod_surfaceview);
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            mTextureView.setOnCapturedPointerListener((v, e) -> onCapturedPointer(e));
-        }
         if (mRuneLite) {
             mLoadingView = com.codyedwin.runelitemobile.launcher.RuneLoadingView.attach(this, "Starting Java…", 0.45f);
             final com.codyedwin.runelitemobile.launcher.RuneLoadingView lv = mLoadingView;
@@ -537,68 +534,6 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         super.onWindowFocusChanged(hasFocus);
         // Re-enter immersive mode after a popup (Jagex login, Chrome, keyboard) took focus.
         if (hasFocus && mRuneLite) onResume_immersive();
-        if (hasFocus && mFpsCapture) mTextureView.post(() -> setFpsCapture(true));
-    }
-
-    // FPS mode (backtick): the mouse is hidden and locked to the app, and its relative motion moves
-    // a virtual cursor that jumps back to the middle near the edges (Free Cam ignores the jumps).
-    private boolean mFpsCapture;
-    private float mFpsX = -1, mFpsY;
-
-    private void setFpsCapture(boolean on) {
-        if (android.os.Build.VERSION.SDK_INT < 26) return;
-        mFpsCapture = on;
-        if (on) {
-            mTextureView.setFocusable(true);
-            mTextureView.setFocusableInTouchMode(true);
-            mTextureView.requestFocus();
-            mTextureView.requestPointerCapture();
-            mFpsX = -1;
-        } else {
-            mTextureView.releasePointerCapture();
-        }
-    }
-
-    private void sendFpsCursor() {
-        int cx = Math.round(mFpsX), cy = Math.round(mFpsY);
-        mLastMouseX = cx;
-        mLastMouseY = cy;
-        AWTInputBridge.sendMousePos(cx, cy);
-    }
-
-    private boolean onCapturedPointer(MotionEvent e) {
-        int w = AWTCanvasView.getCanvasWidth(), h = AWTCanvasView.getCanvasHeight();
-        float homeX = w * 0.45f, homeY = h * 0.5f;
-        if (mFpsX < 0) {
-            mFpsX = homeX;
-            mFpsY = homeY;
-            sendFpsCursor();
-        }
-        if (e.getActionMasked() == MotionEvent.ACTION_SCROLL) {
-            mScrollRemainder += e.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            int notches = (int) mScrollRemainder;
-            mScrollRemainder -= notches;
-            AWTInputBridge.sendScroll(notches);
-            return true;
-        }
-        float dx = e.getX(), dy = e.getY();
-        for (int i = 0; i < e.getHistorySize(); i++) {
-            dx += e.getHistoricalX(i);
-            dy += e.getHistoricalY(i);
-        }
-        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 80f);
-        for (int i = 0; i < steps; i++) {
-            mFpsX = Math.max(0, Math.min(w - 1, mFpsX + dx / steps));
-            mFpsY = Math.max(0, Math.min(h - 1, mFpsY + dy / steps));
-            sendFpsCursor();
-        }
-        if (mFpsX < w * 0.125f || mFpsX > w * 0.75f || mFpsY < h * 0.125f || mFpsY > h * 0.875f) {
-            mFpsX = homeX;
-            mFpsY = homeY;
-            sendFpsCursor();
-        }
-        applyMouseButtons(e);
-        return true;
     }
 
     private void onResume_immersive() {
@@ -702,10 +637,6 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             return;
         }
 
-        applyMouseButtons(event);
-    }
-
-    private void applyMouseButtons(MotionEvent event) {
         int buttonState = event.getButtonState();
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_BUTTON_PRESS) buttonState |= event.getActionButton();
@@ -810,10 +741,6 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                         .putBoolean(LauncherPreferences.PREF_KEY_RUNELITE_BATTERY_OVERLAY, show).apply();
             }
             return true;
-        }
-        if (keyCode == KeyEvent.KEYCODE_GRAVE && event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getRepeatCount() == 0 && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS) == 0) {
-            setFpsCapture(!mFpsCapture); // still forwarded below so Free Cam toggles too
         }
         if (mTouchLockKey != null && keyCode == mTouchLockKey[1]
                 && (event.getMetaState() & LauncherPreferences.TOUCH_LOCK_MODS) == mTouchLockKey[0]) {
