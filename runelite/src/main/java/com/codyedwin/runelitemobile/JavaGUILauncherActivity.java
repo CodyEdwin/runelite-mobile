@@ -158,6 +158,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         mTextureView = findViewById(R.id.installmod_surfaceview);
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             mTextureView.setOnCapturedPointerListener((v, e) -> onCapturedPointer(e));
+            getWindow().getDecorView().setOnCapturedPointerListener((v, e) -> onCapturedPointer(e));
         }
         if (mRuneLite) {
             mLoadingView = com.codyedwin.runelitemobile.launcher.RuneLoadingView.attach(this, "Starting Java…", 0.45f);
@@ -554,9 +555,23 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
             mTextureView.requestFocus();
             mTextureView.requestPointerCapture();
             mFpsX = -1;
+            mTextureView.postDelayed(() -> {
+                boolean locked = mTextureView.hasPointerCapture() || getWindow().getDecorView().hasPointerCapture();
+                if (!locked && mFpsCapture) getWindow().getDecorView().requestPointerCapture();
+                android.util.Log.i("FpsMode", "pointer capture " + (locked ? "on" : "retry on decor"));
+                Toast.makeText(this, locked ? "Mouse locked (backtick to unlock)" : "Mouse lock failed, retrying", Toast.LENGTH_SHORT).show();
+            }, 300);
         } else {
             mTextureView.releasePointerCapture();
+            getWindow().getDecorView().releasePointerCapture();
+            Toast.makeText(this, "Mouse unlocked", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Locked-mouse motion is relative; it must not go through the normal absolute-cursor path. */
+    private boolean isCapturedMouse(MotionEvent event) {
+        return mFpsCapture && android.os.Build.VERSION.SDK_INT >= 26
+                && (event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE) || mTextureView.hasPointerCapture());
     }
 
     private void sendFpsCursor() {
@@ -732,6 +747,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (isCapturedMouse(event)) return onCapturedPointer(event);
         if (mRuneLite && isHardwareMouse(event)) {
             sendHardwareMouseEvent(event);
             return true;
@@ -764,6 +780,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
 
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (isCapturedMouse(event)) return onCapturedPointer(event);
         if (mRuneLite && isHardwareMouse(event)) {
             sendHardwareMouseEvent(event);
             return true;
