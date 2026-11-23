@@ -5,7 +5,7 @@
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 RLA="$(cd "${1:-$HERE/../runelite-automation}" && pwd)"
-PLUGINS="rsbuddy xplogger fullscreen currenthit mouseeffects mobilehd freecam"
+PLUGINS="rsbuddy xplogger fullscreen currenthit mouseeffects mobilehd"
 ASSETS="$HERE/runelite/src/main/assets"
 
 TASKS=":client:shadowJar"
