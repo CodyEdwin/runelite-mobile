@@ -1044,7 +1044,8 @@ public final class Tools {
             File dir = getSdcardCustomPluginDir();
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
-            java.util.Set<String> names = new java.util.TreeSet<>(releasePluginNames());
+            java.util.List<String> release = releasePluginNames();
+            java.util.Set<String> names = new java.util.TreeSet<>(release);
             String[] bundled = context.getAssets().list(RUNELITE_CUSTOM_PLUGINS_ASSET);
             if (bundled != null) names.addAll(java.util.Arrays.asList(bundled));
             int updated = 0, same = 0;
@@ -1067,7 +1068,13 @@ public final class Tools {
                     android.util.Log.w("RuneLitePlugins", "Update " + name + " failed", e);
                 }
             }
-            result = updated + " updated, " + same + " already current"
+            // Plugins taken off the release are removed too (only when the release list was read).
+            int removed = 0;
+            File[] local = release.isEmpty() ? null : dir.listFiles((d, n) -> n.endsWith(".jar"));
+            if (local != null) for (File f : local) {
+                if (!names.contains(f.getName()) && f.delete()) removed++;
+            }
+            result = updated + " updated, " + same + " already current" + (removed > 0 ? ", " + removed + " removed" : "")
                     + (failed.length() > 0 ? ", failed:" + failed : "")
                     + (useCustomRuneLite(context) ? "" : ". Used only with custom RuneLite on.");
         } catch (Exception e) {
