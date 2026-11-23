@@ -62,6 +62,27 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         setContentView(buildUi());
         publishPlayShortcut();
         if (savedInstanceState == null) takeQuickPlay(getIntent());
+        if (savedInstanceState == null) requestBackgroundRunning();
+    }
+
+    /** Notification permission for the "running" notification, and no battery optimization so Android doesn't freeze the game. */
+    @android.annotation.SuppressLint("BatteryLife")
+    private void requestBackgroundRunning() {
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 0x4E54);
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:" + getPackageName())));
+                } catch (Exception e) {
+                    android.util.Log.w("RuneLiteMobile", "Battery optimization prompt unavailable", e);
+                }
+            }
+        }
     }
 
     /** Set when the widget / "Play" shortcut opened us: press PLAY once the UI is ready. */

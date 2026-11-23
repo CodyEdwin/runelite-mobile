@@ -27,6 +27,10 @@ import com.codyedwin.runelitemobile.Tools;
 public class RuneLiteService extends Service {
     private static final int NOTIFICATION_ID = 0x52_4C; // "RL"
 
+    // Keep the CPU and Wi-Fi up with the screen off so the game keeps ticking and stays connected.
+    private android.os.PowerManager.WakeLock wakeLock;
+    private android.net.wifi.WifiManager.WifiLock wifiLock;
+
     @Override
     public void onCreate() {
         Tools.buildNotificationChannel(getApplicationContext());
@@ -35,6 +39,7 @@ public class RuneLiteService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.getBooleanExtra("kill", false)) {
+            releaseLocks();
             stopSelf();
             Process.killProcess(Process.myPid());
             return START_NOT_STICKY;
@@ -46,7 +51,7 @@ public class RuneLiteService extends Service {
                 new Intent(this, JavaGUILauncherActivity.class).setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), immutable);
         Notification notification = new NotificationCompat.Builder(this, "channel_id")
                 .setContentTitle("RuneLite")
-                .setContentText("RuneLite is running")
+                .setContentText("RuneLite is running in the background")
                 .setContentIntent(content)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notification_terminate), kill)
                 .setSmallIcon(R.drawable.notif_icon)
@@ -58,11 +63,48 @@ public class RuneLiteService extends Service {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
+        acquireLocks();
         return START_NOT_STICKY;
+    }
+
+    @SuppressWarnings("deprecation")
+    private void acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+                wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "RuneLite:game");
+                wakeLock.setReferenceCounted(false);
+                wakeLock.acquire();
+            }
+            if (wifiLock == null) {
+                android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                wifiLock = wm.createWifiLock(Build.VERSION.SDK_INT >= 29
+                        ? android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                        : android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "RuneLite:game");
+                wifiLock.setReferenceCounted(false);
+                wifiLock.acquire();
+            }
+        } catch (Exception e) {
+            android.util.Log.w("RuneLiteService", "Unable to acquire wake/wifi lock", e);
+        }
+    }
+
+    private void releaseLocks() {
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+        wakeLock = null;
+        wifiLock = null;
+    }
+
+    @Override
+    public void onDestroy() {
+        releaseLocks();
+        super.onDestroy();
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        releaseLocks();
         stopSelf();
         Process.killProcess(Process.myPid());
     }
