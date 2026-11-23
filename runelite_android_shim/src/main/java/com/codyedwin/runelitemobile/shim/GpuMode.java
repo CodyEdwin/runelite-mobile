@@ -45,6 +45,12 @@ final class GpuMode {
     private static void tick() {
         try {
             if (RuneLite.getInjector() == null) return;
+            if (!capRegistered) {
+                capRegistered = true;
+                RuneLite.getInjector().getInstance(net.runelite.client.eventbus.EventBus.class).register(new DistanceCap());
+                capDrawDistance("gpu");
+                capDrawDistance("hd");
+            }
             PluginManager pm = RuneLite.getInjector().getInstance(PluginManager.class);
             boolean started = false;
             Plugin gpu = null, hd = null;
@@ -84,6 +90,31 @@ final class GpuMode {
     }
 
     private static boolean autoChecked;
+    private static boolean capRegistered;
+
+    /** Draw distances above this load so much scenery that phones stall for seconds and run out of GPU memory. */
+    static final int MAX_DRAW_DISTANCE = Integer.getInteger("runelite.android.maxDrawDistance", 90);
+
+    private static void capDrawDistance(String group) {
+        net.runelite.client.config.ConfigManager cm = RuneLite.getInjector().getInstance(net.runelite.client.config.ConfigManager.class);
+        String v = cm.getConfiguration(group, "drawDistance");
+        try {
+            if (v != null && Integer.parseInt(v.trim()) > MAX_DRAW_DISTANCE) {
+                cm.setConfiguration(group, "drawDistance", MAX_DRAW_DISTANCE);
+                System.out.println("GpuMode: capped " + group + " draw distance " + v + " -> " + MAX_DRAW_DISTANCE);
+            }
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    public static final class DistanceCap {
+        @net.runelite.client.eventbus.Subscribe(priority = 100)
+        public void onConfigChanged(net.runelite.client.events.ConfigChanged e) {
+            if ("drawDistance".equals(e.getKey()) && ("gpu".equals(e.getGroup()) || "hd".equals(e.getGroup()))) {
+                capDrawDistance(e.getGroup());
+            }
+        }
+    }
 
     /**
      * GPU mode installs 117 HD once through RuneLite's own Plugin Hub install (signature- and
