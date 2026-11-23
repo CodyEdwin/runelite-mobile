@@ -403,6 +403,7 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 String gpuClasspath = "";
                 // Native helpers loaded by the shim (AAudio sound output, GPU mode).
                 args.add("-Drunelite.android.nativeDir=" + getApplicationInfo().nativeLibraryDir);
+                args.add("-Drunelite.android.stallProfiler=true");
                 if (Tools.useCustomRuneLite(this)) args.add("-Drunelite.android.custom=true");
                 if (androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
                         .getBoolean(LauncherPreferences.PREF_KEY_RUNELITE_TOUCH_MODE, false)) {

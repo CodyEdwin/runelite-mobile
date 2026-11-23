@@ -757,6 +757,8 @@ public class RuneLiteMobileActivity extends AppCompatActivity {
         if (latest.isFile()) logs.add(latest);
         File client = new File(Tools.getRuneLiteDir(), ".runelite/logs/client.log");
         if (client.isFile()) logs.add(client);
+        File gc = new File(Tools.DIR_GAME_HOME, "gc.log");
+        if (gc.isFile()) logs.add(gc);
         File[] crashes = Tools.getRuneLiteDir().listFiles((d, n) -> n.startsWith("hs_err_pid") && n.endsWith(".log"));
         if (crashes != null) {
             java.util.Arrays.sort(crashes, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
